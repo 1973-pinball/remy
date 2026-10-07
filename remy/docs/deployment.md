@@ -36,14 +36,16 @@ http://127.0.0.1:5173/auth/callback
 
 Only add the local URLs if local sign-in is needed. Do not use a broad redirect wildcard for arbitrary preview deployments. A preview that needs sign-in requires its own exact origin and environment configuration.
 
-In Authentication → Email Templates → Magic Link, use a token-hash link so the server can establish the session:
+For the built-in free email sender, keep Supabase's default Magic Link template. Remy's server client requests a PKCE link, and `/auth/confirm` exchanges the returned `code` for a session. Open the newest link in the **same browser and device** used to request it; the exchange requires that browser's verification cookie. If an email app opens a different browser, copy the link into the original browser. Request a fresh link if the cookie or link has expired.
+
+Supabase currently requires custom SMTP before it accepts email-template changes. If a deployment already has custom SMTP, it may instead use a token-hash Magic Link template:
 
 ```html
 <h2>Sign in to Remy</h2>
 <p><a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email">Open your private journal</a></p>
 ```
 
-Remy supplies the allowlisted `/auth/confirm` address as `RedirectTo`. Open the newest link only; links are single use. The callback also supports a PKCE `code` for compatible Supabase flows. Redirect destinations in incoming query parameters are ignored. Sessions use HTTP-only cookies, refresh through the Next.js proxy, and are validated with `getUser()` on each protected API request. [Passwordless sign-in](https://supabase.com/docs/guides/auth/auth-email-passwordless), [SSR clients](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [email template variables](https://supabase.com/docs/guides/auth/auth-email-templates).
+Remy supplies the allowlisted `/auth/confirm` address as `RedirectTo` and supports both callback formats. Links are single use. Redirect destinations in incoming query parameters are ignored. Sessions use HTTP-only cookies, refresh through the Next.js proxy, and are validated with `getUser()` on each protected API request. [Passwordless sign-in](https://supabase.com/docs/guides/auth/auth-email-passwordless), [SSR clients](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [email template variables](https://supabase.com/docs/guides/auth/auth-email-templates).
 
 ## 3. Configure Vercel
 

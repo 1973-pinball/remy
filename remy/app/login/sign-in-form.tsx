@@ -6,7 +6,7 @@ export default function LoginForm({ invalidLink }: { invalidLink: boolean }) {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState(invalidLink ? 'This link has expired, has already been used, or is not for this journal. Request a new link.' : '');
+  const [error, setError] = useState(invalidLink ? 'This link could not sign you in. Request a new link and open the newest email in the same browser and on the same device you use here.' : '');
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,7 +20,7 @@ export default function LoginForm({ invalidLink }: { invalidLink: boolean }) {
     finally { setBusy(false); }
   }
 
-  return sent ? <div role="status" style={{ lineHeight: 1.7 }}><strong>Check your inbox.</strong><p>If this is the journal owner’s email, a sign-in link is on its way. Open the latest link to continue.</p><button className="text-button" onClick={() => setSent(false)}>Use another email</button></div> : <form onSubmit={submit} style={{ display: 'grid', gap: 14, marginTop: 26 }}>
+  return sent ? <div role="status" style={{ lineHeight: 1.7 }}><strong>Check your inbox.</strong><p>If this is the journal owner’s email, a sign-in link is on its way. Open the newest link in the same browser and on the same device you used here. If your email opens another browser, copy the link into this one.</p><button className="text-button" onClick={() => setSent(false)}>Use another email</button></div> : <form onSubmit={submit} style={{ display: 'grid', gap: 14, marginTop: 26 }}>
     <label htmlFor="owner-email" style={{ fontSize: 14, fontWeight: 600 }}>Email address</label>
     <input id="owner-email" name="email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" style={{ padding: '13px 14px', border: '1px solid #dbe2dc', borderRadius: 8, font: 'inherit', width: '100%' }} />
     {error && <p role="alert" style={{ color: '#a42731', fontSize: 14, lineHeight: 1.5, margin: 0 }}>{error}</p>}

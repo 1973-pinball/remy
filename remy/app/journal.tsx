@@ -91,6 +91,15 @@ const value = (n: number | null | undefined, unit = "") =>
   n == null ? "—" : `${Math.round(n).toLocaleString()}${unit}`;
 const number = (n: number | null | undefined, unit = "") =>
   n == null ? "—" : `${round(n).toLocaleString()}${unit}`;
+
+export function ownedDeviceDrafts(drafts: any[], ownerId: string | null) {
+  return ownerId ? drafts.filter((draft) => draft?.ownerId === ownerId) : [];
+}
+
+export function claimUnassignedDeviceDrafts(drafts: any[], ownerId: string | null) {
+  if (!ownerId) throw new Error("Sign in before claiming drafts created on this device.");
+  return drafts.map((draft) => draft && draft.ownerId == null ? { ...draft, ownerId } : draft);
+}
 function Metric({
   label,
   amount,
@@ -137,6 +146,7 @@ export default function Journal() {
 function JournalContent() {
   const { setOpenMobile } = useSidebar();
   const pendingChat = useRef<{message:string;date:string;id:string}|null>(null);
+  const refreshVersion = useRef(0);
   const [view, setView] = useState<View>("Today"),
     [date, setDate] = useState(localDate()),
     [entries, setEntries] = useState<Entry[]>([]),
@@ -157,6 +167,8 @@ function JournalContent() {
     [chat, setChat] = useState(""),
     [chatBusy, setChatBusy] = useState(false),
     [period, setPeriod] = useState(14);
+  const ownedDrafts = ownedDeviceDrafts(drafts, user?.id ?? null);
+  const hasUnassignedDrafts = !!user && drafts.some((draft) => draft && draft.ownerId == null);
   const records = demo ? demoEntries : entries,
     summary = useMemo(() => summarize(records, date), [records, date]),
     week = useMemo(() => weeklyTraining(records, date), [records, date]),
@@ -165,21 +177,43 @@ function JournalContent() {
     workouts = ofKind<Workout>(records, "workout"),
     plans = ofKind<Plan>(records, "plan").filter((p) => !p.data.cancelled),
     savedMeals = ofKind<Meal>(records, "savedMeal");
+  const clearPrivateView = useCallback(() => {
+    refreshVersion.current++;
+    setEntries([]);
+    setUser(null);
+    setEditing(null);
+    setModal(null);
+    setChat("");
+    setChatBusy(false);
+    pendingChat.current = null;
+    setLoading(false);
+  }, []);
+  const requireActiveSession = useCallback((response: Response) => {
+    if (response.status === 401 || response.status === 403) {
+      clearPrivateView();
+      setConnectionError("Sign in again to open your private journal.");
+      throw new Error("Sign in again to open your private journal.");
+    }
+  }, [clearPrivateView]);
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     setLoading(true);
     try {
-      const r = await fetch("/api/journal?date=" + date, { cache: "no-store" }),
-        data = await r.json();
+      const r = await fetch("/api/journal?date=" + date, { cache: "no-store" });
+      if (version !== refreshVersion.current) return;
+      requireActiveSession(r);
+      const data = await r.json();
+      if (version !== refreshVersion.current) return;
       if (!r.ok) throw new Error(data.error ?? "Could not open journal");
       setEntries(data.entries);
       setUser(data.user);
       setConnectionError("");
     } catch (e) {
-      setConnectionError((e as Error).message);
+      if (version === refreshVersion.current) setConnectionError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (version === refreshVersion.current) setLoading(false);
     }
-  }, [date]);
+  }, [date, requireActiveSession]);
   useEffect(() => {
     const url = new URL(window.location.href);
     const v = url.searchParams.get("view");
@@ -200,9 +234,8 @@ function JournalContent() {
     if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) setDate(day);
     setDemoEntries(sampleEntries(localDate()));
     try {
-      setDrafts(
-        JSON.parse(localStorage.getItem("remy-offline-drafts") ?? "[]"),
-      );
+      const stored = JSON.parse(localStorage.getItem("remy-offline-drafts") ?? "[]");
+      if (Array.isArray(stored)) setDrafts(stored.filter((draft) => draft && typeof draft === "object" && typeof draft.id === "string"));
     } catch {}
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -210,6 +243,26 @@ function JournalContent() {
   useEffect(() => {
     if (!demo) void refresh();
   }, [refresh, demo]);
+  useEffect(() => {
+    if (demo) return;
+    let lastCheck = 0;
+    const revalidate = () => {
+      if (document.visibilityState === "hidden" || Date.now() - lastCheck < 1000) return;
+      lastCheck = Date.now();
+      void refresh();
+    };
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) { clearPrivateView(); lastCheck = 0; revalidate(); }
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+    window.addEventListener("pageshow", restored);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
+      window.removeEventListener("pageshow", restored);
+    };
+  }, [demo, refresh, clearPrivateView]);
   useEffect(() => {
     const target =
       new URL(window.location.href).searchParams.get("record") ||
@@ -278,6 +331,7 @@ function JournalContent() {
       }
       throw e;
     }
+    requireActiveSession(response);
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
     await refresh();
@@ -296,6 +350,7 @@ function JournalContent() {
           revision: entry.revision,
         }),
       });
+      requireActiveSession(r);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       await refresh();
@@ -335,8 +390,9 @@ function JournalContent() {
             date,
             id: pendingChat.current.id,
           }),
-        }),
-        d = await r.json();
+        });
+      requireActiveSession(r);
+      const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       pendingChat.current = null;
       setChat("");
@@ -599,12 +655,12 @@ function JournalContent() {
             <span>YOUR TRAINING, WELL FUELED</span>
           </div>
           <div className="topbar-actions">
-            {drafts.length > 0 && (
+            {user && !demo && (ownedDrafts.length > 0 || hasUnassignedDrafts) && (
               <button
                 className="quiet-button"
                 onClick={() => setModal("drafts")}
               >
-                {drafts.length} drafts
+                {ownedDrafts.length ? `${ownedDrafts.length} drafts` : "Review device drafts"}
               </button>
             )}
             <button className="quiet-button" onClick={() => setDemo(!demo)}>
@@ -1371,7 +1427,7 @@ function JournalContent() {
       {modal === "import" && (
         <ImportDialog onClose={() => setModal(null)} onImported={refresh} />
       )}
-      {modal === "drafts" && (
+      {modal === "drafts" && user && !demo && (
         <Dialog open onOpenChange={(v) => !v && setModal(null)}>
           <DialogContent>
             <DialogHeader>
@@ -1380,7 +1436,17 @@ function JournalContent() {
                 Review drafts before sending to your signed-in journal.
               </DialogDescription>
             </DialogHeader>
-            {drafts.map((d) => (
+            {hasUnassignedDrafts && <div className="card">
+              <p className="muted">Some drafts on this device were created while signed out. Their contents stay hidden until you confirm that you created them.</p>
+              <button className="quiet-button" onClick={() => {
+                try {
+                  const next = claimUnassignedDeviceDrafts(drafts, user.id);
+                  localStorage.setItem("remy-offline-drafts", JSON.stringify(next));
+                  setDrafts(next);
+                } catch (error) { toast.error(error instanceof Error ? error.message : "Could not claim these drafts."); }
+              }}>Confirm these drafts are mine</button>
+            </div>}
+            {ownedDrafts.map((d) => (
               <div className="draft-row" key={d.id}>
                 <strong>{d.data?.title ?? d.text ?? "Food draft"}</strong>
                 <small>{d.localDate ?? d.queuedAt}</small>
@@ -1389,7 +1455,7 @@ function JournalContent() {
                   disabled={!user || demo}
                   onClick={async () => {
                     try {
-                      if (d.ownerId && d.ownerId !== user?.id)
+                      if (d.ownerId !== user.id)
                         throw new Error(
                           "This draft belongs to a different account.",
                         );

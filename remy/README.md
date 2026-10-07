@@ -15,7 +15,7 @@ The application and provider adapters are implemented. Each deployment needs its
 
 ## Local preview
 
-Use Node.js 22.13 or newer and npm:
+Use Node.js 22 (22.13 or newer within that major version) and npm:
 
 ```sh
 npm ci

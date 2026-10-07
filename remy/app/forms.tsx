@@ -493,6 +493,7 @@ export function MealDialog({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const meal = entry?.data;
+  const isCorrection = !!entry?.revision;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -507,7 +508,7 @@ export function MealDialog({
         id: entry?.id,
         kind: "meal",
         localDate: mealDate,
-        revision: entry?.revision,
+        revision: entry?.revision || undefined,
         data: {
           title: String(f.get("title")),
           mealType: type,
@@ -542,10 +543,10 @@ export function MealDialog({
       <DialogContent className="form-dialog">
         <DialogHeader>
           <DialogTitle>
-            {entry ? "Correct this meal" : "Add to your food journal"}
+            {isCorrection ? "Correct this meal" : "Add to your food journal"}
           </DialogTitle>
           <DialogDescription>
-            {entry
+            {isCorrection
               ? "Update the original entry. Its revision history is preserved."
               : "Use a label, recipe, or reviewed estimate. Leave unknown quantities blank."}
           </DialogDescription>
@@ -671,7 +672,7 @@ export function MealDialog({
             </button>
             <button disabled={busy} className="primary-button">
               {busy && <LoaderCircle size={16} className="animate-spin" />}
-              {entry ? "Save correction" : "Save meal"}
+              {isCorrection ? "Save correction" : "Save meal"}
             </button>
           </div>
         </form>
