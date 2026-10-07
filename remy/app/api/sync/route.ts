@@ -1,0 +1,9 @@
+import {timingSafeEqual} from 'node:crypto';
+import {config,syncSource,configuredSources,PROVIDERS} from '@/lib/connections';
+import {createAdminClient} from '@/lib/supabase/admin';
+import {json} from '@/lib/http';
+export const runtime='nodejs';
+export const maxDuration=60;
+async function scheduledSync(request:Request){const c=config(),secret=c.CRON_SECRET,supplied=request.headers.get('authorization')??'';if(!secret||secret.length<32||!c.SYNC_OWNER_ID||!c.REMY_ALLOWED_EMAIL)return json({error:'Scheduled synchronization is not configured.'},503);const expected=Buffer.from(`Bearer ${secret}`),actual=Buffer.from(supplied);if(expected.length!==actual.length||!timingSafeEqual(expected,actual))return json({error:'Unauthorized'},401);try{const {data,error}=await createAdminClient().auth.admin.getUserById(c.SYNC_OWNER_ID);if(error||!data.user||data.user.email?.toLowerCase()!==c.REMY_ALLOWED_EMAIL.toLowerCase()||!data.user.email_confirmed_at)return json({error:'Scheduled owner must be the confirmed allowed user.'},403);const state=await configuredSources(c.SYNC_OWNER_ID);const selected=PROVIDERS.filter(source=>state.authorized[source]);const results=await Promise.allSettled(selected.map(source=>syncSource(c.SYNC_OWNER_ID!,source)));const output=results.map((result,i)=>result.status==='fulfilled'?result.value:{source:selected[i],error:result.reason instanceof Error?result.reason.message:'Sync failed.'});const configurationFailures=Object.entries(state.configurationErrors).map(([source,error])=>({source,error}));return json({results:[...output,...configurationFailures]},configurationFailures.length||results.some(r=>r.status==='rejected')?207:200);}catch{return json({error:'Scheduled synchronization could not access its private configuration.'},503);}}
+export const GET=scheduledSync;
+export const POST=scheduledSync;

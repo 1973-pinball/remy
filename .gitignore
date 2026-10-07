@@ -1,0 +1,11 @@
+# Local research and personal source records are never part of the public app.
+/docs/
+**/.local/
+**/private-imports/
+**/.env*
+!**/.env.example
+**/.vercel/
+**/supabase/.temp/
+**/supabase/.branches/
+*.pem
+*.key
