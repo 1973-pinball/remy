@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Brand } from '@/components/brand';
 
 export const metadata: Metadata = {
   title: 'Privacy policy — Remy Mux',
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return <main className="page-content privacy-page">
-    <Link href="/" className="brand" aria-label="Remy Mux home"><span className="brand-mark" aria-hidden="true">r</span><span className="brand-name">Remy Mux<span className="brand-period">.</span></span></Link>
+    <Brand />
     <article className="card privacy-policy">
       <header>
         <p className="eyebrow">YOUR DATA, IN CONTEXT</p>

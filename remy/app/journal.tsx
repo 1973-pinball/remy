@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Brand } from "@/components/brand";
 import {
   Sun,
   Utensils,
@@ -583,10 +584,7 @@ function JournalContent() {
     <>
       <Sidebar className="remy-sidebar">
         <SidebarHeader>
-          <a className="brand" href="/" aria-label="Remy Mux home">
-            <span className="brand-mark" aria-hidden="true">r</span>
-            <span className="brand-name">Remy Mux<span className="brand-period">.</span></span>
-          </a>
+          <Brand />
           <p className="sidebar-label">YOUR DAILY COMPANION</p>
         </SidebarHeader>
         <SidebarContent>

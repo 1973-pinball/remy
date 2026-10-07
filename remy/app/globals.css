@@ -108,14 +108,10 @@ a:focus-visible {
   color: #203629;
 }
 .brand-mark {
-  display: grid;
-  place-items: center;
-  background: #c6f368;
-  border-radius: 12px;
-  width: 36px;
-  height: 36px;
-  font-size: 34px;
-  line-height: 1;
+  display: block;
+  width: 32px;
+  height: 37px;
+  object-fit: contain;
   margin-right: 10px;
   flex-shrink: 0;
 }

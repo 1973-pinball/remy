@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   applicationName: "Remy Mux",
   description: "Your private nutrition and marathon-training journal.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/favicon.svg", apple: "/icon-192.png" },
+  icons: { icon: { url: "/remy-logo.png", type: "image/png", sizes: "32x37" }, apple: "/remy-icon-192.png" },
 };
 export default function RootLayout({
   children,

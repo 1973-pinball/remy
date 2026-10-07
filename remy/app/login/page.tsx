@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Brand } from '@/components/brand';
 import { authSetupMessage } from '@/lib/supabase/config';
 import LoginForm from './sign-in-form';
 
@@ -8,7 +9,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const setup = authSetupMessage();
   const query = await searchParams;
   return <main className="page-content" style={{ maxWidth: 620, paddingTop: 70 }}>
-    <Link href="/" className="brand" aria-label="Remy Mux home"><span className="brand-mark" aria-hidden="true">r</span><span className="brand-name">Remy Mux<span className="brand-period">.</span></span></Link>
+    <Brand />
     <section className="card">
       <p className="eyebrow">YOUR PRIVATE JOURNAL</p>
       <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: -1 }}>Fuel your next run.</h1>
