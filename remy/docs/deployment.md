@@ -11,6 +11,7 @@ The hosted application is [Remy Mux](https://remy-mux.vercel.app). For this depl
 | Strava | Website | `https://remy-mux.vercel.app` |
 | Strava | Authorization Callback Domain | `remy-mux.vercel.app` |
 | WHOOP | Redirect URL | `https://remy-mux.vercel.app/api/whoop` |
+| WHOOP | Privacy policy URL | `https://remy-mux.vercel.app/privacy` |
 
 The examples below use `your-remy.vercel.app` for other deployments. Register callbacks for the actual hostname; the old `remy-lime.vercel.app` address redirects to the current site and should not be used for new provider registrations.
 

@@ -633,6 +633,7 @@ function JournalContent() {
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
+          <a className="privacy-link" href="/privacy">Privacy policy</a>
           <div className="account">
             <span>{(profile.name || "R")[0]}</span>
             <div>

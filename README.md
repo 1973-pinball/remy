@@ -4,6 +4,8 @@ A private Eat to Live nutrition journal with running and recovery context. The s
 
 Open [Remy Mux](https://remy-mux.vercel.app).
 
+Read the public [privacy policy](https://remy-mux.vercel.app/privacy), including connected-provider data, retention and deletion controls.
+
 The Next.js application lives in [`remy/`](remy/). See the [application README](remy/README.md) for features and local development, and the [Vercel + Supabase setup guide](remy/docs/deployment.md) for deployment.
 
 Only synthetic sample data is included. Nutrition exports, personal records, provider credentials, and local configuration are excluded from this repository.

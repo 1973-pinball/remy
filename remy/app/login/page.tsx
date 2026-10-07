@@ -18,6 +18,6 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
         <p>Your journal will be available after the owner connects Supabase.</p>
       </div> : <LoginForm invalidLink={query.error === 'invalid-link'} />}
     </section>
-    <p style={{ fontSize: 13, marginTop: 22, color: '#64716a' }}><Link href="/">← Back to Remy Mux</Link></p>
+    <p style={{ fontSize: 13, marginTop: 22, color: '#64716a', display: 'flex', gap: 20, flexWrap: 'wrap' }}><Link href="/">← Back to Remy Mux</Link><Link href="/privacy">Privacy policy</Link></p>
   </main>;
 }
