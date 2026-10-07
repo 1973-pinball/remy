@@ -1,6 +1,6 @@
 # Remy Mux on Vercel and Supabase
 
-Remy Mux runs as a Next.js application on Vercel, with a private Supabase Postgres journal and Supabase email sign-in. No OpenAI connection is required for logging, imports, headline training metrics, or the current rule-based nutrition insights. This guide covers the hosted application and the setup needed for another deployment; each data source still requires its own authorization.
+Remy Mux runs as a Next.js application on Vercel, with a private Supabase Postgres journal and Supabase email or optional Google sign-in. No OpenAI connection is required for logging, imports, headline training metrics, or the current rule-based nutrition insights. This guide covers the hosted application and the setup needed for another deployment; each data source still requires its own authorization.
 
 Use your existing Vercel and Supabase accounts when available. Remy Mux needs its own project link and environment configuration; credentials from unrelated apps should not be copied into Remy Mux. Check available free project slots before creating a dedicated database.
 
@@ -58,6 +58,38 @@ Supabase currently requires custom SMTP before it accepts email-template changes
 
 Remy Mux supplies the allowlisted `/auth/confirm` address as `RedirectTo` and supports both callback formats. Links are single use. Redirect destinations in incoming query parameters are ignored. Sessions use HTTP-only cookies, refresh through the Next.js proxy, and are validated with `getUser()` on each protected API request. [Passwordless sign-in](https://supabase.com/docs/guides/auth/auth-email-passwordless), [SSR clients](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [email template variables](https://supabase.com/docs/guides/auth/auth-email-templates).
 
+### Optional Google sign-in
+
+Google sign-in uses Supabase Auth and the existing server-side PKCE callback. Configure it in Supabase; Google credentials do not belong in Vercel or browser code.
+
+1. In [Google Auth Platform](https://console.cloud.google.com/auth/overview), choose or create a project and configure the consent screen for **Remy Mux**. Use an External audience. While testing, add each intended Google account as a test user; use Google's production publishing flow before inviting accounts outside that list. Request only basic identity scopes (`openid`, `email` and `profile`). Use `info.studio.pinball@gmail.com` as support contact; Google requires signing in with that account (with access to this project) for it to appear in the support dropdown.
+2. Create an OAuth client of type **Web application**. For this deployment use the JavaScript origin `https://remy-mux.vercel.app` and the authorized redirect URI `https://rsxuxakoyhwukustnqmi.supabase.co/auth/v1/callback`. This is Google's callback to Supabase; it is separate from Remy Mux's `/auth/callback`.
+3. Open the [Supabase Google provider settings](https://supabase.com/dashboard/project/rsxuxakoyhwukustnqmi/auth/providers), enable Google, and save the Client ID and Client Secret directly there. Preserve nonce and verified-email checks. Never commit or paste the secret into chat.
+4. Keep `https://remy-mux.vercel.app/auth/callback` in the Supabase redirect allowlist. Retain the pre-existing confirmed owner account. Enable new Supabase signups only after the access-request migration and protected pending flow are deployed. Keep email confirmation enabled. Supabase automatically links a verified Google identity with the same email; Remy Mux still checks the exact configured owner email before granting journal access. Supabase's signup setting is global: direct email signup can create an Auth account too, but cannot grant journal access.
+5. Refresh the login page, choose **Continue with Google**, and select the owner's account. Verify the owner UUID is unchanged and existing journal/provider connections are available. A different verified Google account must receive an access-pending page and remain blocked from all journal APIs. Email-link sign-in remains an alternative for the configured owner.
+
+The public login page reads Supabase's provider availability, so enabling Google does not require publishing credentials or a separate Vercel environment variable. [Supabase Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google), [identity linking](https://supabase.com/docs/guides/auth/auth-identity-linking).
+
+### Access requests and free Resend notifications
+
+Apply `supabase/migrations/202610070002_access_requests.sql` after the journal migration and deploy the Google callback/pending pages before allowing new Supabase accounts. The access-request table and its functions are server-only. A verified Google account other than the configured owner receives `/access-pending`; journal and provider APIs continue to reject it. This feature records requests; it does not grant access or provide an approval button.
+
+For the domain-free setup, sign up for the free [Resend](https://resend.com/) account using `info.studio.pinball@gmail.com`. Its test sender `onboarding@resend.dev` can send only to the Resend account's registered email. A different recipient requires a verified sending domain. Keep the free plan and do not enable paid overages. [Resend setup](https://vercel.com/academy/build-and-launch-with-ai/prepare-email).
+
+Add these production-only server variables in Vercel, then redeploy:
+
+| Variable | Value or purpose |
+| --- | --- |
+| `RESEND_API_KEY` | A private Resend sending key; never use a `NEXT_PUBLIC_` variable |
+| `ACCESS_REQUEST_FROM_EMAIL` | `onboarding@resend.dev` for the domain-free setup |
+| `ACCESS_REQUEST_TO_EMAIL` | `info.studio.pinball@gmail.com` |
+
+Use plain email addresses for the two mailbox settings. `REMY_ALLOWED_EMAIL` remains the owner's sign-in address; it is independent of the public support and notification address. There is no fallback recipient when mail configuration is missing.
+
+Each Google user has one durable pending request. Request notifications include the name, email, request time and owner-only review-page link, without journal data. The owner can review requests under **Your profile → View access requests** (`/access-requests`). A mail failure or missing configuration leaves the request saved and queued. After correcting configuration, the owner can retry from that page; there is no scheduled email retry. An accepted notification means Resend accepted it, not that inbox delivery was confirmed.
+
+Retries preserve the original message and idempotency key, use a five-minute cooldown, stop after three attempts, and stop before Resend's 24-hour idempotency window expires. The app also limits notifications to 20 new requests per 24 hours and three attempts per minute. Requests beyond these limits remain visible for review. [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
 ## 3. Configure Vercel
 
 Import the Remy Mux repository into a **Hobby** project. Select the folder containing Remy Mux’s `package.json` as the root directory (`remy` if importing the parent workspace). Use Next.js, Node.js 22, `npm ci`, and `npm run build`; `vercel.json` supplies the build/install settings and daily cron.
@@ -100,7 +132,7 @@ For a complete database backup, use a manual Supabase/Postgres backup with a tru
 ## Verify the first live setup
 
 1. With no session, private APIs reject access and show sign-in/setup guidance.
-2. Only the confirmed allowlisted owner can sign in and read/write their journal; another account is rejected.
+2. Only the confirmed allowlisted owner can read/write their journal. With Google enabled, another verified Google account gets a saved access request and remains blocked from journal/provider APIs. Verify the notification in the configured inbox and the owner-only requests page.
 3. Create a disposable nutrition entry, reload, and confirm it persists. Exercise edit/undo and export before importing the full history.
 4. Import a small real ETL sample, review it, and check the stored dates and source labels alongside a known run/day.
 5. Connect one source at a time; compare a known headline value with the provider, then check the scheduled sync result.
