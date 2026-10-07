@@ -37,18 +37,18 @@ export function appOrigin(request?: Request) {
       if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error();
       if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback(url.hostname))) throw new Error();
       return url.origin;
-    } catch { throw new SetupError('APP_ORIGIN must be the exact HTTPS address of Remy, without a path. Local development may use http://127.0.0.1:5173.'); }
+    } catch { throw new SetupError('APP_ORIGIN must be the exact HTTPS address of Remy Mux, without a path. Local development may use http://127.0.0.1:5173.'); }
   }
   if (request && !process.env.VERCEL) {
     const url = new URL(request.url);
     if (isLoopback(url.hostname)) return url.origin;
   }
-  throw new SetupError('Set APP_ORIGIN to the deployed Remy address before enabling sign-in.');
+  throw new SetupError('Set APP_ORIGIN to the deployed Remy Mux address before enabling sign-in.');
 }
 
 export function assertSameOrigin(request: Request) {
   const origin = request.headers.get('origin');
-  if (!origin || origin !== appOrigin(request)) throw Object.assign(new Error('This request must come from your Remy journal.'), { status: 403 });
+  if (!origin || origin !== appOrigin(request)) throw Object.assign(new Error('This request must come from your Remy Mux journal.'), { status: 403 });
 }
 
 export function authCookieOptions() {

@@ -213,7 +213,7 @@ export function ImportDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="form-dialog import-dialog">
         <DialogHeader>
-          <DialogTitle>Bring your history into Remy</DialogTitle>
+          <DialogTitle>Bring your history into Remy Mux</DialogTitle>
           <DialogDescription>
             Review extracted entries before saving. Existing source entries keep
             their corrections on reimport.

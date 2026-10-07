@@ -10,7 +10,7 @@ export async function authorize(request: Request, write = false): Promise<Author
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw Object.assign(new Error('Sign in to use your private journal.'), { status: 401 });
   const user = data.user;
-  if (!user.email_confirmed_at || !isAllowedEmail(user.email)) throw Object.assign(new Error('This Remy journal is private to its owner.'), { status: 403 });
+  if (!user.email_confirmed_at || !isAllowedEmail(user.email)) throw Object.assign(new Error('This Remy Mux journal is private to its owner.'), { status: 403 });
   return { userId: user.id, email: user.email!, fullName: typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : null };
 }
 

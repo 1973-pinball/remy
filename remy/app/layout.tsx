@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "Remy — Fuel your running",
+  title: "Remy Mux — Fuel your running",
+  applicationName: "Remy Mux",
   description: "Your private nutrition and marathon-training journal.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/favicon.svg", apple: "/icon-192.png" },

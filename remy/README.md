@@ -1,4 +1,4 @@
-# Remy
+# Remy Mux
 
 A private nutrition journal with marathon-training context, built with Next.js, Supabase Postgres/Auth/Storage, and Vercel. The current emphasis is Eat to Live food logging, WHOOP exertion/energy context, and weekly running mileage from Strava.
 

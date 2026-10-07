@@ -1,6 +1,8 @@
-# Remy
+# Remy Mux
 
 A private Eat to Live nutrition journal with running and recovery context. The source is public; each deployed journal requires its owner's sign-in.
+
+Open [Remy Mux](https://remy-mux.vercel.app).
 
 The Next.js application lives in [`remy/`](remy/). See the [application README](remy/README.md) for features and local development, and the [Vercel + Supabase setup guide](remy/docs/deployment.md) for deployment.
 
@@ -12,7 +14,7 @@ The application infrastructure is live. Dashed connections show data integration
 
 ```mermaid
 flowchart LR
-    G[Public GitHub repo] -->|Automatic deployment| R[Remy on Vercel]
+    G[Public GitHub repo] -->|Automatic deployment| R[Remy Mux on Vercel]
     U[You: browser or phone] <--> R
     R <--> S[Private Supabase database and sign-in]
     ST[Strava: completed runs] -. Pending .-> R

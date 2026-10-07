@@ -583,9 +583,9 @@ function JournalContent() {
     <>
       <Sidebar className="remy-sidebar">
         <SidebarHeader>
-          <a className="brand" href="/">
-            <span className="brand-mark">r</span>remy
-            <span className="brand-period">.</span>
+          <a className="brand" href="/" aria-label="Remy Mux home">
+            <span className="brand-mark" aria-hidden="true">r</span>
+            <span className="brand-name">Remy Mux<span className="brand-period">.</span></span>
           </a>
           <p className="sidebar-label">YOUR DAILY COMPANION</p>
         </SidebarHeader>
@@ -694,7 +694,7 @@ function JournalContent() {
                           ? "Talk it through."
                           : view === "Connections"
                             ? "Bring it all together."
-                            : "Make Remy yours."}
+                            : "Make Remy Mux yours."}
               </h1>
               <p>
                 {view === "Today"
@@ -726,7 +726,7 @@ function JournalContent() {
           {demo ? (
             <div className="notice demo-notice">
               <span className="pill">SAMPLE MODE</span>Synthetic records for
-              exploring Remy. They are not your data and won’t be saved.
+              exploring Remy Mux. They are not your data and won’t be saved.
             </div>
           ) : connectionError ? (
             <div className="notice setup-notice">
@@ -1273,7 +1273,7 @@ function JournalContent() {
                 </ul>
                 <p className="muted">
                   WHOOP cycle boundaries may differ from the food day. Wearable
-                  expenditure is an estimate. Remy does not diagnose low energy
+                  expenditure is an estimate. Remy Mux does not diagnose low energy
                   availability or REDs.
                 </p>
                 <SourceLine
@@ -1306,7 +1306,7 @@ function JournalContent() {
                       <span>
                         {m.data.role === "user"
                           ? "You"
-                          : "Remy · journal helper"}
+                          : "Remy Mux · journal helper"}
                       </span>
                       <p>{m.data.text}</p>
                       {((m.data.fingerprint &&
@@ -1368,7 +1368,7 @@ function JournalContent() {
               </div>
               <form className="chat-composer" onSubmit={sendChat}>
                 <Textarea
-                  aria-label="Message to Remy"
+                  aria-label="Message to Remy Mux"
                   value={chat}
                   onChange={(e) => setChat(e.target.value)}
                   placeholder="Ask about your day, or log a meal…"
@@ -1392,7 +1392,7 @@ function JournalContent() {
           )}
           <footer className="page-footer">
             <span>Built around your records. Always open to correction.</span>
-            <span>REMY / NUTRITION IN CONTEXT</span>
+            <span>REMY MUX / NUTRITION IN CONTEXT</span>
           </footer>
         </div>
       </main>
