@@ -265,14 +265,19 @@ function JournalContent() {
     if (target)
       document.getElementById(target)?.scrollIntoView({ block: "center" });
   }, [view, date, records]);
-  const go = (v: View) => {
-    setView(v);
+  const selectDate = (selectedDate: string, selectedView: View = view, recordId?: string) => {
+    setDate(selectedDate);
+    setView(selectedView);
     setOpenMobile(false);
     const u = new URL(window.location.href);
-    u.searchParams.set("view", v);
-    u.searchParams.set("date", date);
-    window.history.replaceState(null, "", u.pathname + u.search);
+    u.searchParams.set("view", selectedView);
+    u.searchParams.set("date", selectedDate);
+    if (recordId) u.searchParams.set("record", recordId);
+    else u.searchParams.delete("record");
+    u.hash = recordId ? encodeURIComponent(recordId) : "";
+    window.history.replaceState(null, "", u.pathname + u.search + u.hash);
   };
+  const go = (v: View) => selectDate(date, v);
   const recordDraft = (r: SaveRecord) => {
     const draft = {
       ...r,
@@ -520,13 +525,7 @@ function JournalContent() {
             onClick={(e) => {
               e.preventDefault();
               const u = new URL(l.href, window.location.origin);
-              go(u.searchParams.get("view") as View);
-              if (l.date) setDate(l.date);
-              window.history.replaceState(
-                null,
-                "",
-                u.pathname + u.search + "#" + encodeURIComponent(l.id),
-              );
+              selectDate(l.date ?? date, u.searchParams.get("view") as View, l.id);
               requestAnimationFrame(() =>
                 document
                   .getElementById(l.id)
@@ -714,7 +713,7 @@ function JournalContent() {
             <div>
               <button
                 aria-label="Previous day"
-                onClick={() => setDate(addDays(date, -1))}
+                onClick={() => selectDate(addDays(date, -1))}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -722,17 +721,17 @@ function JournalContent() {
                 type="date"
                 aria-label="Journal date"
                 value={date}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
+                onChange={(e) => e.target.value && selectDate(e.target.value)}
               />
               <button
                 aria-label="Next day"
-                onClick={() => setDate(addDays(date, 1))}
+                onClick={() => selectDate(addDays(date, 1))}
               >
                 <ChevronRight size={16} />
               </button>
               <button
                 className="text-button"
-                onClick={() => setDate(localDate(new Date(), profile.timezone))}
+                onClick={() => selectDate(localDate(new Date(), profile.timezone))}
               >
                 Today
               </button>
@@ -1038,12 +1037,7 @@ function JournalContent() {
                 records={records}
                 selectedDate={date}
                 onOpenDate={(historicalDate) => {
-                  setDate(historicalDate);
-                  setView("Food");
-                  const url = new URL(window.location.href);
-                  url.searchParams.set("view", "Food");
-                  url.searchParams.set("date", historicalDate);
-                  window.history.replaceState(null, "", url.pathname + url.search);
+                  selectDate(historicalDate, "Food");
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
               />
