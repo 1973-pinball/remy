@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <header>
         <p className="eyebrow">YOUR DATA, IN CONTEXT</p>
         <h1>Privacy policy</h1>
-        <p className="muted">Effective and last updated: October 7, 2026</p>
+        <p className="muted">Effective and last updated: October 20, 2026</p>
         <p>Remy Mux is a personal nutrition and running journal operated by the maintainer of the <a href="https://github.com/1973-pinball/remy">Remy Mux project</a>. Journal access at <a href="https://remy-mux.vercel.app">remy-mux.vercel.app</a> is currently restricted to its configured owner. Other Google users may request access when Google sign-in is enabled; submitting a request does not grant access to the journal. This policy describes that application, including optional WHOOP, Strava, Runna and Tredict connections. A connection only supplies data after it is configured and authorized.</p>
       </header>
 
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Account and profile:</strong> sign-in email, account identifier, any supplied display name, timezone, weight, dietary preferences, calorie baseline, running goals and related profile information. If you choose Google sign-in when enabled, Google supplies your basic identity information, including your email, Google account identifier, name and profile picture, to Supabase for authentication.</li>
           <li><strong>Access requests:</strong> if a Google account without journal access signs in, the app records that account&apos;s identifier, email, display name, request time, pending status and notification-delivery status so the operator can review the request.</li>
-          <li><strong>Nutrition and journal:</strong> meals, nutrient values, Eat to Live categories, timestamps, notes, logging status, journal-helper messages, corrections and revision history.</li>
+          <li><strong>Nutrition and journal:</strong> meals, nutrient values, Eat to Live categories, timestamps, notes, logging status, helper or coach messages, proposed changes, corrections and revision history. If you attach a photo to a coach message, the app processes that photo for the request; descriptions, estimates and assumptions derived from it may be saved with the conversation or proposal.</li>
           <li><strong>WHOOP, when authorized:</strong> cycle, recovery and sleep records, including estimated energy expenditure, strain, recovery scores, heart-rate variability, resting heart rate, sleep timing and duration, identifiers and other fields returned in those API responses.</li>
           <li><strong>Other connected sources:</strong> completed running activities from Strava or optional Tredict, and planned sessions from a Runna calendar. Records can include activity names, dates, distances, durations, heart rate, elevation, descriptions and source identifiers. Original activity responses or uploaded files can also contain route or location information, even when the interface shows only headline numbers.</li>
           <li><strong>Imports and connection details:</strong> selected ChatGPT conversation exports, structured nutrition records, activity or calendar files you submit, retained original import files, access and refresh tokens, private calendar addresses, and synchronization status.</li>
@@ -33,8 +33,16 @@ export default function PrivacyPage() {
 
       <section>
         <h2>Why this information is used</h2>
-        <p>The app uses this information to authenticate its owner, save and correct journal records, import authorized activity and recovery data, calculate headline summaries, relate food intake to running goals and training, generate rule-based insights, and provide export, deletion and synchronization controls. Retained source records help reconcile repeated imports and preserve corrections.</p>
-        <p>Remy Mux does not sell personal data, run advertising, or use connected health data to train AI models. The current journal helper and insights use application rules; the deployed app does not currently send journal or provider data to OpenAI or another external AI model. Nutrition and training information is not used to make medical, insurance or employment decisions.</p>
+        <p>The app uses this information to authenticate its owner, save and correct journal records, import authorized activity and recovery data, calculate headline summaries, relate food intake to running goals and training, generate rule-based insights and optional AI coaching, and provide export, deletion and synchronization controls. Retained source records help reconcile repeated imports and preserve corrections.</p>
+        <p>Remy Mux does not sell personal data, run advertising, or train AI models with connected health data. Nutrition and training information is not used to make medical, insurance or employment decisions. Ordinary logging, imports, calculated insights and provider synchronization do not require the optional AI coach.</p>
+      </section>
+
+      <section>
+        <h2>Optional AI coach and photos</h2>
+        <p>When the coach is configured and you explicitly send a message after the in-app processing notice, Remy Mux sends your prompt, recent conversation and selected journal information to OpenAI to generate a reply and, when relevant, a proposed meal or correction. This context can include dietary preferences, confirmed weight and goals, selected meals, calculated nutrition totals, upcoming plans and up to 28 days of aggregate running and recovery context. It excludes raw provider responses, route/location fields, connection credentials and original import files. Information you type or show in a photo is part of the content you choose to send.</p>
+        <p>The browser re-encodes an attached photo and limits it to 900 KB. Photo bytes are sent for the current request and are not saved in the Remy Mux database, private file storage or application logs. Saved text descriptions, estimates, assumptions, replies and proposals can still describe the photo. Sample mode makes no AI calls.</p>
+        <p>OpenAI does not use API content to train its models by default unless the organization explicitly opts in. Remy Mux requests <code>store: false</code>, but this does not guarantee zero retention: standard abuse-monitoring logs may be retained for up to 30 days, with exceptions described in <a href="https://developers.openai.com/api/docs/guides/your-data">OpenAI&apos;s data controls</a>.</p>
+        <p>AI proposals are estimates for your review. You can edit or decline them; they change journal records only after confirmation. The app checks record revisions and calculates saved totals itself. Using the coach incurs separate API usage costs when enabled. You can continue using the journal without sending coach messages.</p>
       </section>
 
       <section>
@@ -60,16 +68,16 @@ export default function PrivacyPage() {
 
       <section>
         <h2>Retention, export and deletion</h2>
-        <p>Saved records, revisions and original imports remain until deleted; the app has no automatic age-based deletion schedule. A rolling synchronization window limits what the app requests from a source, not how long it retains previously imported records. Individual record deletions can retain revision history for correction or undo.</p>
+        <p>Saved records, including coach messages and proposals, revisions and original imports remain until deleted; the app has no automatic age-based deletion schedule. A rolling synchronization window limits what the app requests from a source, not how long it retains previously imported records. Individual record deletions can retain revision history for correction or undo. Coach photo bytes are not retained by Remy Mux.</p>
         <p>In <Link href="/?view=Settings">Your profile</Link>, you can export journal records and revision history. The export lists original-file paths but does not include those files&apos; contents or provider credentials. <strong>Delete all journal data</strong> removes stored journal records, revisions, original imports and saved connection credentials from the active application stores. It stops sources from repopulating the journal until explicitly reconnected.</p>
-        <p>That action does not delete your Supabase sign-in account, minimal metadata used to prevent stale writes, provider accounts, browser drafts, or copies you downloaded. The operator can remove the sign-in account separately through Supabase administration. Infrastructure logs or backup copies, if any, are subject to the service providers&apos; retention practices; the app does not promise their immediate erasure.</p>
+        <p>That action does not delete your Supabase sign-in account, minimal metadata used to prevent stale writes, provider accounts, browser drafts, or copies you downloaded. The operator can remove the sign-in account separately through Supabase administration. Infrastructure logs, OpenAI retention described above, or backup copies, if any, are subject to the service providers&apos; retention practices; the app does not promise their immediate erasure.</p>
         <p>Access requests and notification records are separate from the owner&apos;s nutrition journal and are not removed by its journal-deletion control. Requesters may contact the operator to request removal of their access request and sign-in account. Copies of notification emails may remain in the operator&apos;s inbox or email provider systems until separately deleted.</p>
       </section>
 
       <section>
         <h2>Contact and changes</h2>
         <p>For policy questions, access or deletion assistance, contact the Remy Mux operator at <a href="mailto:info.studio.pinball@gmail.com">info.studio.pinball@gmail.com</a>. Describe your request without sending passwords, API tokens or complete health exports; any additional information needed to verify or handle the request can be arranged privately.</p>
-        <p>Changes to these practices will be reflected on this page with an updated date. If the application adds external AI processing, additional data sources or broader account access, this policy should be reviewed before those features are enabled.</p>
+        <p>Changes to these practices will be reflected on this page with an updated date. Changes to AI processing, additional data sources or broader account access require reviewing this policy before those features are enabled.</p>
       </section>
     </article>
     <p className="privacy-back"><Link href="/">← Back to Remy Mux</Link></p>

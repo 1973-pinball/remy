@@ -17,7 +17,6 @@ import {
   Bookmark,
   Download,
   ShieldCheck,
-  Send,
   Flame,
   Leaf,
   Info,
@@ -39,7 +38,6 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -57,6 +55,7 @@ import {
   type SaveRecord,
 } from "./forms";
 import { TrainingView, ConnectionsView, SettingsView } from "./secondary-views";
+import { CoachView } from "./coach";
 import {
   summarize,
   ofKind,
@@ -146,7 +145,6 @@ export default function Journal() {
 }
 function JournalContent() {
   const { setOpenMobile } = useSidebar();
-  const pendingChat = useRef<{message:string;date:string;id:string}|null>(null);
   const refreshVersion = useRef(0);
   const [view, setView] = useState<View>("Today"),
     [date, setDate] = useState(localDate()),
@@ -165,8 +163,6 @@ function JournalContent() {
     >(null),
     [editing, setEditing] = useState<Entry<any> | null>(null),
     [drafts, setDrafts] = useState<any[]>([]),
-    [chat, setChat] = useState(""),
-    [chatBusy, setChatBusy] = useState(false),
     [period, setPeriod] = useState(14);
   const ownedDrafts = ownedDeviceDrafts(drafts, user?.id ?? null);
   const hasUnassignedDrafts = !!user && drafts.some((draft) => draft && draft.ownerId == null);
@@ -184,9 +180,6 @@ function JournalContent() {
     setUser(null);
     setEditing(null);
     setModal(null);
-    setChat("");
-    setChatBusy(false);
-    pendingChat.current = null;
     setLoading(false);
   }, []);
   const requireActiveSession = useCallback((response: Response) => {
@@ -370,44 +363,6 @@ function JournalContent() {
       data: day,
     });
   };
-  async function sendChat(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!chat.trim()) return;
-    if (demo) {
-      toast(
-        "Journal chat uses saved records. Exit sample mode and connect your database.",
-      );
-      return;
-    }
-    setChatBusy(true);
-    if (pendingChat.current?.message !== chat || pendingChat.current?.date !== date)
-      pendingChat.current = {message:chat,date,id:crypto.randomUUID()};
-    try {
-      const r = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: chat,
-            date,
-            id: pendingChat.current.id,
-          }),
-        });
-      requireActiveSession(r);
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      pendingChat.current = null;
-      setChat("");
-      await refresh();
-      if (d.action?.entry)
-        toast("Journal updated", {
-          action: { label: "Undo", onClick: () => void undo(d.action.entry) },
-        });
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setChatBusy(false);
-    }
-  }
   const meals = summary.meals,
     cycle = [...summary.expenditure].sort((a, b) =>
       b.start.localeCompare(a.start),
@@ -596,7 +551,7 @@ function JournalContent() {
                   onClick={() => go(label)}
                 >
                   <Icon />
-                  <span>{label === "Food" ? "Food & ETL" : label}</span>
+                  <span>{label === "Food" ? "Food & ETL" : label === "Chat" ? "Coach" : label}</span>
                   {view === label && <span className="nav-dot" />}
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -690,7 +645,7 @@ function JournalContent() {
                       : view === "Insights"
                         ? "Make the connection."
                         : view === "Chat"
-                          ? "Talk it through."
+                          ? "Eat well. Run strong."
                           : view === "Connections"
                             ? "Bring it all together."
                             : "Make Remy Mux yours."}
@@ -707,7 +662,7 @@ function JournalContent() {
                         : view === "Connections"
                           ? "Each source connects independently. Your journal keeps working."
                           : view === "Chat"
-                            ? "Ask about your records or log a meal in a sentence."
+                            ? "Your Eat to Live sidekick, with running and recovery in view."
                             : "Your goals and preferences shape the context."}
               </p>
             </div>
@@ -1284,110 +1239,14 @@ function JournalContent() {
             </>
           )}
           {view === "Chat" && (
-            <section className="card chat-card">
-              <div className="chat-mode">
-                <Sparkles size={18} />
-                <div>
-                  <strong>Journal helper</strong>
-                  <p>Uses shared calculations. Live OpenAI chat is deferred.</p>
-                </div>
-                <span className="pill">NO AI API COST</span>
-              </div>
-              <div className="chat-messages" aria-live="polite">
-                {ofKind<any>(records, "message")
-                  .filter((m) => m.localDate === date)
-                  .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
-                  .map((m) => (
-                    <article
-                      className={`chat-message ${m.data.role}`}
-                      key={m.id}
-                    >
-                      <span>
-                        {m.data.role === "user"
-                          ? "You"
-                          : "Remy Mux · journal helper"}
-                      </span>
-                      <p>{m.data.text}</p>
-                      {((m.data.fingerprint &&
-                        m.data.fingerprint !== summary.fingerprint) ||
-                        (m.data.contextFingerprint &&
-                          m.data.contextFingerprint !== brief.fingerprint)) && (
-                        <small className="warning">
-                          Records changed after this answer. Ask again for an
-                          updated view.
-                        </small>
-                      )}
-                      {m.data.inputs && (
-                        <div className="evidence-links">
-                          {m.data.inputs
-                            .filter((i: any) =>
-                              ["meal", "workout", "plan"].includes(i.kind),
-                            )
-                            .slice(0, 5)
-                            .map((i: any) => (
-                              <a
-                                key={i.id}
-                                href={`/?view=${i.kind === "meal" ? "Food" : "Training"}&date=${i.date}#${i.id}`}
-                              >
-                                {i.kind} · {i.date}
-                              </a>
-                            ))}
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                {!ofKind(records, "message").length && (
-                  <div className="chat-welcome">
-                    <span className="empty-icon">
-                      <MessageCircle />
-                    </span>
-                    <h2>A place to connect the dots.</h2>
-                    <p>
-                      Ask about logged intake and upcoming runs, or write
-                      “Dinner was…” to save a meal with any nutrition you
-                      provide.
-                    </p>
-                    <div className="suggestions">
-                      {[
-                        "What should I eat tonight given tomorrow’s run?",
-                        "How do my ETL meals fit my running?",
-                        "I’m finished logging today",
-                      ].map((q) => (
-                        <button
-                          className="quiet-button"
-                          key={q}
-                          onClick={() => setChat(q)}
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <form className="chat-composer" onSubmit={sendChat}>
-                <Textarea
-                  aria-label="Message to Remy Mux"
-                  value={chat}
-                  onChange={(e) => setChat(e.target.value)}
-                  placeholder="Ask about your day, or log a meal…"
-                  maxLength={3000}
-                  rows={2}
-                />
-                <button
-                  className="primary-button"
-                  aria-label="Send message"
-                  disabled={chatBusy || !chat.trim()}
-                >
-                  <Send size={19} />
-                </button>
-              </form>
-              <p className="microcopy">
-                Nutrition values are only saved when supplied. Edit entries to
-                correct ingredients or estimates. AI-generated answers are not
-                enabled.
-              </p>
-            </section>
+            <CoachView
+              key={`${user?.id ?? "signed-out"}:${date}:${demo}`}
+              records={records}
+              date={date}
+              demo={demo}
+              authenticated={!!user}
+              onChanged={refresh}
+            />
           )}
           <footer className="page-footer">
             <span>Built around your records. Always open to correction.</span>

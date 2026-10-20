@@ -1,0 +1,162 @@
+import {addDays, dayBounds, ofKind, profileOf, round, type Day, type Entry, type EtlField, type Meal, type Nutrients, type Recovery} from './domain';
+
+/** Reproducible in browser and server; includes changes to the wider advice window. */
+export function coachContextFingerprint(entries: Entry[], date: string) {
+  const from = addDays(date, -27), through = addDays(date, 7), zone = profileOf(entries).timezone;
+  const start = Date.parse(dayBounds(from, zone).start), end = Date.parse(dayBounds(date, zone).end);
+  return entries.filter(entry => {
+    if (entry.deleted) return false;
+    if (entry.kind === 'profile' || entry.kind === 'connection') return true;
+    if (entry.kind === 'recovery') {
+      const cycle = entry.data as unknown as Recovery;
+      return Date.parse(cycle.start) < end && (cycle.end === null || Date.parse(cycle.end) > start);
+    }
+    if (!entry.localDate) return false;
+    if (entry.kind === 'plan') return entry.localDate >= date && entry.localDate <= through;
+    return ['meal', 'workout', 'day'].includes(entry.kind) && entry.localDate >= from && entry.localDate <= date;
+  }).map(entry => `${entry.id}:${entry.revision}`).sort().join('|');
+}
+
+/** User preferences for maintenance and training, not required quotas or restrictive caps. */
+export const COACH_TARGETS = {
+  protein: [120, 135],
+  rawVegetablesG: [600, 800],
+  cookedVegetablesG: [600, 800],
+  beansG: [500, 700],
+  soyG: [300, 450],
+  fruitServings: [4, 6],
+  starchCups: [1.5, 2.5],
+  nutsSeedsG: [30, 45],
+  flaxG: [10, 15],
+  avocadoG: [50, 100],
+  flexCalories: [280, 300],
+} as const;
+
+export const COACH_REFERENCES = [
+  {
+    title: 'Nutrition and Athletic Performance — Academy, Dietitians of Canada and ACSM (2016)',
+    url: 'https://www.dietitians.ca/DietitiansOfCanada/media/Documents/Resources/noap-position-paper.pdf',
+  },
+  {
+    title: 'Australian Institute of Sport — Carbohydrate during exercise',
+    url: 'https://www.ausport.gov.au/ais/nutrition/supplements/group_a/sports-foods2/sports-drink/how-and-when-do-i-use-it',
+  },
+  {
+    title: 'Australian Institute of Sport — Protein needs and distribution',
+    url: 'https://www.ausport.gov.au/ais/nutrition/supplements/group_a/sports-foods2/isolated-protein-supplement2',
+  },
+  {
+    title: 'SDA and USSF — Exercise-associated gastrointestinal symptoms (2025)',
+    url: 'https://link.springer.com/article/10.1007/s40279-025-02186-6',
+  },
+  {
+    title: 'WHOOP — Calorie estimates and their limitations',
+    url: 'https://www.whoop.com/us/en/thelocker/calorie-tracking-science/',
+  },
+  {
+    title: 'WHOOP — Physiological cycles and score availability',
+    url: 'https://developer.prod.whoop.com/docs/developing/user-data/cycle/',
+  },
+] as const;
+
+export const COACH_PRINCIPLES = `
+Support weight maintenance, muscle retention, running performance and recovery within the user's ETL preferences. The configured food and protein ranges are user preferences, not universal requirements, required quotas or restrictive caps. Do not prescribe weight loss or praise restriction.
+Use recorded meals, training duration and intensity, upcoming demanding sessions, recovery trends, hunger and gut tolerance. Separate facts, estimates and unknowns. An incomplete log cannot establish insufficient intake. Do not invent quantities, food-category zeros, body weight, exercise or calorie expenditure.
+Use body-weight-based gram targets only with a confirmed profile and a finite positive current weight; otherwise keep g/kg guidance conditional. Daily carbohydrate references are 3–5 g/kg for light activity, 5–7 for about one hour of moderate daily training, and 6–10 for about one to three hours of moderate-to-high endurance training. Adapt these references to the whole training context, not a workout title alone. Before exercise over an hour, 1–4 g/kg in the preceding 1–4 hours is a broad reference adjusted to timing and tolerance. Rapid carbohydrate replacement of 1–1.2 g/kg/hour for four hours is chiefly relevant when demanding sessions are less than eight hours apart.
+During endurance exercise of 1–2.5 hours, 30–60 g carbohydrate/hour is a reference; beyond about 2.5–3 hours, up to 90 g/hour may suit practiced tolerance. Do not jump an inexperienced runner directly to high intakes. Higher intakes may need glucose/fructose mixtures and gut practice.
+Preserve the user's 120–135 g protein preference while checking fit against confirmed body weight and training. Spread protein across meals and snacks; approximately 0.3–0.4 g/kg per eating occasion is an AIS reference. Include varied plant protein choices that fit the user's preferences.
+Do not let large vegetable or bean portions displace adequate energy, carbohydrate or comfortable eating. Move bulky or high-fiber foods away from runs when helpful and suggest familiar, tolerable carbohydrate choices. Do not impose a permanent low-fiber or low-FODMAP diet; recurrent symptoms need individualized assessment.
+Keep calorie goals provisional until supported by adequate logs and longer-term weight, performance and recovery trends. WHOOP expenditure is an estimate over physiological cycles that can cross calendar days. Do not add workout calories again to a WHOOP total, diagnose underfueling from a subtraction, or treat a recovery score as a diagnosis.
+Count run-fuel calories and carbohydrate once in total intake, while showing run fuel separately for timing. Flex percentage means explicitly classified flex calories divided by all logged calories, including run fuel. Report it only when every logged meal has known calories and an explicit valid flex classification, and distinguish complete logged-record coverage from a complete food day. Missing flex values are unknown, not zero. The remainder is not automatically nutrient-dense food. A fixed 280–300 kcal allowance is exactly 10% only at 2,800–3,000 kcal; a personal exemption for run fuel would be a different, explicitly named convention.
+Avoid diagnosing deficiencies, injuries or REDs from app data. Offer a few concrete, preference-aware next actions, identify the evidence and limitations that matter, and use the supplied references rather than inventing research.
+`.trim();
+
+type Range = readonly [number, number];
+type FoodTargetKey = Exclude<keyof typeof COACH_TARGETS, 'protein' | 'flexCalories'>;
+type Coverage = {known: number; total: number; complete: boolean};
+
+const FOOD_TARGETS: readonly {key: FoodTargetKey; label: string; unit: string}[] = [
+  {key: 'rawVegetablesG', label: 'Raw vegetables', unit: 'g'},
+  {key: 'cookedVegetablesG', label: 'Cooked vegetables', unit: 'g'},
+  {key: 'beansG', label: 'Beans', unit: 'g'},
+  {key: 'soyG', label: 'Soy foods', unit: 'g'},
+  {key: 'fruitServings', label: 'Fruit', unit: 'servings'},
+  {key: 'starchCups', label: 'Starch', unit: 'cups'},
+  {key: 'nutsSeedsG', label: 'Nuts and seeds', unit: 'g'},
+  {key: 'flaxG', label: 'Flax', unit: 'g'},
+  {key: 'avocadoG', label: 'Avocado', unit: 'g'},
+];
+const NUTRIENTS = ['calories', 'carbs', 'protein', 'fat', 'fiber'] as const;
+
+function isKnown(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function aggregate(values: unknown[]) {
+  const known = values.filter(isKnown);
+  return {
+    value: known.length ? round(known.reduce((sum, value) => sum + value, 0)) : null,
+    known: known.length,
+    total: values.length,
+    complete: values.length > 0 && known.length === values.length,
+  };
+}
+
+export interface CoachProgress {
+  totals: Nutrients;
+  nutrientCoverage: Record<keyof Nutrients, Coverage>;
+  foodComplete: boolean;
+  protein: {value: number | null; range: Range};
+  etl: {key: FoodTargetKey; label: string; unit: string; value: number | null; known: number; total: number; range: Range}[];
+  flex: {value: number | null; range: Range; loggedPercent: number | null; ratioComplete: boolean};
+  runFuelCalories: number | null;
+  scopeNotes: readonly string[];
+}
+
+/** Pure selected-day progress: no clock, profile defaults, device estimates or inferred food. */
+export function coachProgress(entries: Entry[], date: string): CoachProgress {
+  const meals = ofKind<Meal>(entries, 'meal').filter(meal => meal.localDate === date);
+  const totals = {} as Nutrients;
+  const nutrientCoverage = {} as Record<keyof Nutrients, Coverage>;
+  for (const key of NUTRIENTS) {
+    const {value, ...coverage} = aggregate(meals.map(meal => meal.data[key]));
+    totals[key] = value;
+    nutrientCoverage[key] = coverage;
+  }
+  const category = (key: EtlField) => aggregate(meals.map(meal => meal.data.etl?.[key]));
+  const foodComplete = ofKind<Day>(entries, 'day').some(day => day.localDate === date && day.data.complete === true);
+  const etl = FOOD_TARGETS.map(target => {
+    const {value, known, total} = category(target.key);
+    return {...target, value, known, total, range: COACH_TARGETS[target.key]};
+  });
+  const flex = category('flexCalories');
+  // Both sides of the ratio must cover the same meals. An omitted classification is unknown.
+  const ratioCovered = meals.length > 0 && meals.every(({data}) =>
+    isKnown(data.calories) && isKnown(data.etl?.flexCalories) && data.etl.flexCalories <= data.calories,
+  );
+  const calorieSum = ratioCovered ? meals.reduce((sum, meal) => sum + meal.data.calories!, 0) : 0;
+  const flexSum = ratioCovered ? meals.reduce((sum, meal) => sum + meal.data.etl!.flexCalories!, 0) : 0;
+  const loggedPercent = calorieSum > 0 ? round(flexSum / calorieSum * 100) : null;
+
+  return {
+    totals,
+    nutrientCoverage,
+    foodComplete,
+    protein: {value: totals.protein, range: COACH_TARGETS.protein},
+    etl,
+    flex: {
+      value: flex.value,
+      range: COACH_TARGETS.flexCalories,
+      loggedPercent,
+      ratioComplete: foodComplete && loggedPercent !== null,
+    },
+    runFuelCalories: category('runFuelCalories').value,
+    scopeNotes: [
+      'Ranges are your preferences for maintenance and training, not required quotas or hard limits.',
+      'Known sums cover recorded meals only. Missing nutrients or food categories remain unknown, including on a day marked complete.',
+      'Flex percentage includes all logged calories, including run fuel, and requires explicit flex values for every logged meal. The remainder is not automatically nutrient-dense food.',
+      'Run fuel is shown separately and is already part of meal calorie totals; it is not added again.',
+      'Confirm preparation, serving sizes and category overlap before comparing portions; do not count the same portion twice within a category.',
+    ],
+  };
+}

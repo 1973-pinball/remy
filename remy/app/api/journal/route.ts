@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const user = await authorize(request);
     const entries = await listEntries(user.userId);
     const date = dateSchema.parse(new URL(request.url).searchParams.get('date') ?? localDate(new Date(), profileOf(entries).timezone));
-    return json({ entries, summary: summarize(entries, date), user: { id: user.userId, name: user.fullName ?? '', email: user.email }, chatAvailable: false });
+    return json({ entries, summary: summarize(entries, date), user: { id: user.userId, name: user.fullName ?? '', email: user.email }, chatAvailable: !!process.env.OPENAI_API_KEY?.trim() });
   } catch (error) { return failure(error); }
 }
 

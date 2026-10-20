@@ -1,6 +1,6 @@
 # Remy Mux on Vercel and Supabase
 
-Remy Mux runs as a Next.js application on Vercel, with a private Supabase Postgres journal and Supabase email or optional Google sign-in. No OpenAI connection is required for logging, imports, headline training metrics, or the current rule-based nutrition insights. This guide covers the hosted application and the setup needed for another deployment; each data source still requires its own authorization.
+Remy Mux runs as a Next.js application on Vercel, with a private Supabase Postgres journal and Supabase email or optional Google sign-in. No OpenAI connection is required for logging, imports, headline training metrics, or rule-based nutrition insights. The optional AI coach requires separate server configuration and live verification. This guide covers the hosted application and the setup needed for another deployment; each data source still requires its own authorization.
 
 Use your existing Vercel and Supabase accounts when available. Remy Mux needs its own project link and environment configuration; credentials from unrelated apps should not be copied into Remy Mux. Check available free project slots before creating a dedicated database.
 
@@ -21,7 +21,7 @@ The examples below use `your-remy.vercel.app` for other deployments. Register ca
 - **Supabase Free:** $0 within the included 500 MB database, 1 GB file storage, and 5 GB egress. Free accounts are limited to two active projects. Check your existing projects before creating Remy Mux; do not upgrade a plan or put Remy Mux’s health history into another app’s database automatically. If both slots are occupied, a separate free Remy Mux project requires freeing an unused slot or choosing an explicitly approved alternative. Automatic database backups are not included. [Supabase pricing](https://supabase.com/pricing).
 - **Availability:** Free Supabase projects with low activity over a seven-day period may be paused. A daily sync does not guarantee that a project cannot pause. Restore a paused project from the Supabase dashboard before retrying sign-in or sync. [Project pausing](https://supabase.com/docs/guides/platform/free-project-pausing).
 - **Email:** Supabase’s built-in sender only sends to addresses on the Supabase organization’s team and currently allows two messages per hour. It is best-effort and intended for testing/noncritical use. The owner’s team email can be used for the initial personal setup. Reliable delivery to other addresses requires custom SMTP, with the email provider’s own free quota or charges; Remy Mux does not provision one. [SMTP requirements](https://supabase.com/docs/guides/auth/auth-smtp).
-- Existing WHOOP, Strava, Runna, or Tredict account/subscription costs are separate from Remy Mux hosting. No AI usage is enabled or billed by this app version.
+- Existing WHOOP, Strava, Runna, or Tredict account/subscription costs are separate from Remy Mux hosting. Enabling the optional coach incurs OpenAI API usage charges; free hosting does not cover them. See [API pricing](https://developers.openai.com/api/docs/pricing).
 
 ## 1. Create a dedicated Supabase project
 
@@ -110,6 +110,34 @@ Add environment variables in Vercel → Project Settings → Environment Variabl
 Use a password manager to generate/store private keys. Do not paste secrets into chat. Set private values only for environments that need live access; avoid connecting every preview deployment to the production health journal. Redeploy after changing environment variables. Confirm the final Vercel domain is identical to `APP_ORIGIN` and the Supabase Site URL.
 
 For local development, copy `.env.example` to ignored `.env.local`, fill the same values using the intended project, keep `APP_ORIGIN=http://127.0.0.1:5173`, then run `npm run dev`. Missing configuration produces a setup message and HTTP 503 for private data; there is no fallback identity or fake authenticated account.
+
+### Optional AI coach
+
+The coach uses `/api/coach` on the authenticated Remy server to call OpenAI's Responses API. Add the following private variables only to the intended environment, then restart locally or redeploy Vercel:
+
+| Variable | Value or purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | A private OpenAI project API key; never commit it, paste it into chat, or put it in a `NEXT_PUBLIC_` variable |
+| `OPENAI_MODEL` | Optional model identifier; defaults to `gpt-5.4-mini` |
+
+The default model supports image input and structured output. Any replacement must support both through the Responses API; confirm availability for the chosen OpenAI project rather than assuming a model name guarantees access. [Model capabilities](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
+
+An absent key leaves AI unavailable while ordinary journal features remain usable. A configured status only means the deployment has the required setting; it does not verify the key, project billing or model access. Sample mode does not make AI requests. Provider synchronization also does not call the model.
+
+Read the in-app processing notice before sending a coach message. Explicitly sending sends the prompt, recent conversation and selected journal context to OpenAI, including bounded running/recovery aggregates for up to 28 days. Raw provider payloads, route/location fields, credentials and original import files are excluded from this context. Current attached photos are re-encoded in the browser and limited to 900 KB; the application does not persist or log the photo bytes. Text derived from a photo, assumptions, replies and reviewed proposals can remain in journal history.
+
+The request sets `store: false`; this is not Zero Data Retention. OpenAI API content is not used for training by default unless the organization opts in, and standard abuse-monitoring retention can still apply. Review the project's settings and [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Keep the deployed privacy notice consistent with the enabled behavior.
+
+AI proposes meals and corrections. The owner reviews the date, portions, estimates and changes, edits them if needed, then confirms. Confirmation validates the stored proposal and record revisions, writes the journal change and proposal outcome atomically, and calculates fresh totals in application code. Missing nutrition stays unknown; WHOOP estimates are not automatically added to food targets.
+
+Before relying on the coach:
+
+1. Complete the ordinary owner-access and persistence checks below. Verify an unsigned-in request to `/api/coach` is rejected and no AI request occurs in sample mode.
+2. Use an isolated test journal with a synthetic meal description first. For a photo check, use a nonpersonal test image. Only a successful provider response establishes live model access; do not treat a build or configured badge as that evidence.
+3. Confirm that generating a proposal leaves meal totals unchanged. Review and edit the proposal, confirm once, reload, and compare deterministic totals with the supplied values. Repeat the same confirmation to check that it does not add another meal.
+4. Test a correction to a disposable meal, a competing edit before confirmation, and undo. A changed target must require a fresh review rather than overwrite the newer record.
+5. Check the failure state for unavailable API access. Inspect usage in the intended OpenAI project; do not log request bodies, photo bytes or keys to diagnose failures.
+6. Review the first real meal/photo proposal against known portions or labels before saving it. These are acceptance steps, not a claim that this deployment has passed them.
 
 ## 4. Connect training sources
 
