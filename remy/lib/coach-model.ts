@@ -106,7 +106,7 @@ export function buildCoachContext(entries: Entry[], date: string, now = new Date
     const day = addDays(from, i), s = summarize(entries, day, { now });
     const dayRuns = s.workouts.filter(e => /run|treadmill/i.test(e.data.sport));
     return {
-      date: day, totals: s.totals, foodComplete: s.day.complete, nutrientCoverage: s.nutrientCoverage,
+      date: day, totals: s.totals, nutritionSource:s.nutritionSource, foodComplete: s.nutritionSource==='historical-summary'?false:s.day.complete, nutrientCoverage: s.nutrientCoverage,
       meals: s.meals.length, runCount: dayRuns.length,
       runMinutes: dayRuns.reduce((n, r) => n + (r.data.durationSec ?? 0) / 60, 0),
       missingRunDurations: dayRuns.filter(r => r.data.durationSec == null).length,

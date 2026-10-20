@@ -7,11 +7,11 @@ import * as validation from '../lib/validation';
 import * as imports from '../lib/imports';
 const code=ts.transpileModule(fs.readFileSync(new URL('../app/api/import/route.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 type Guard={generation:number;provider?:string;version?:number};
-function harness(deleteDuringBody=false){
+function harness(deleteDuringBody=false,existing:domain.Entry[]=[]){
  let generation=1;const guards:Guard[]=[],writes:string[]=[];
  const checked=(guard:Guard)=>{assert.ok(guard,'Every import mutation needs a guard');guards.push(guard);if(guard.generation!==generation)throw new Error('Journal changed during import');};
  const http={authorize:async()=>({userId:'synthetic-owner'}),body:async(request:Request)=>{const result=await request.json();if(deleteDuringBody)generation++;return result},json:(value:unknown)=>Response.json(value),failure:(error:Error)=>Response.json({error:error.message},{status:400})};
- const store={operationGuard:async(_owner:string,provider?:string)=>({generation,...provider?{provider,version:2}:{}}),listEntries:async()=>[],hash:async(text:string)=>Buffer.from(text).toString('base64url'),uploadOriginal:async(_owner:string,_path:string,_text:string,guard:Guard)=>{checked(guard);writes.push('original')},saveEntry:async(_owner:string,input:Record<string,unknown>)=>{checked(input.guard as Guard);writes.push(String(input.kind));return{entry:{...input,revision:1,updatedAt:'2026-04-04T12:00:00Z'},duplicate:false}}};
+ const store={operationGuard:async(_owner:string,provider?:string)=>({generation,...provider?{provider,version:2}:{}}),listEntries:async()=>structuredClone(existing),hash:async(text:string)=>Buffer.from(text).toString('base64url'),uploadOriginal:async(_owner:string,_path:string,_text:string,guard:Guard)=>{checked(guard);writes.push('original')},saveEntry:async(_owner:string,input:Record<string,unknown>)=>{checked(input.guard as Guard);writes.push(String(input.kind));return{entry:{...input,revision:1,updatedAt:'2026-04-04T12:00:00Z'},duplicate:false}}};
  const connections={persistWorkout:async(_owner:string,_source:string,_id:string,_data:unknown,_raw:unknown,_zone:string,guard:Guard)=>{checked(guard);writes.push('workout');return{entry:{},duplicate:false,matched:false,updated:false}}};
  const modules:Record<string,unknown>={'@/lib/http':http,'@/lib/store':store,'@/lib/connections':connections,'@/lib/domain':domain,'@/lib/validation':validation,'@/lib/imports':imports},module:{exports:Record<string,unknown>}={exports:{}};
  new Function('require','module','exports',code)((name:string)=>{if(!(name in modules))throw new Error('Unexpected route dependency '+name);return modules[name]},module,module.exports);
@@ -27,4 +27,13 @@ test('workout import forwards its operation guard to reconciliation',async()=>{
 });
 test('deletion during request parsing cannot give an old import a new generation',async()=>{
  const h=harness(true),response=await h.send('remy-etl',[meal]);assert.equal(response.status,400);assert.deepEqual(h.writes,[]);assert.equal(h.guards[0].generation,1);
+});
+test('historical imports preserve changed, alternate-source and deleted snapshots; JSON key order does not create duplicates',async()=>{
+ const candidate=imports.importMeals(JSON.stringify({dailySummaries:[{id:'daily-1',date:'2026-04-04',calories:2300,protein:120,carbs:300,fat:80,fiber:null,notes:'Synthetic history',sourceMessageId:'source-1',confidence:'estimate',coverage:'unknown',etl:{flexCalories:300}}]})).candidates[0];
+ const previous:domain.Entry={id:'stored',kind:'dailySummary',localDate:candidate.date,source:'remy-etl',sourceId:candidate.key,revision:1,updatedAt:'2026-04-04T12:00:00Z',data:Object.fromEntries(Object.entries(candidate.data).reverse())};
+ const repeat=harness(false,[previous]),replayed=await repeat.send('remy-etl',[candidate]);
+ assert.equal(replayed.status,200);assert.equal((await replayed.json()).duplicates,1);assert.deepEqual(repeat.writes,['original','import']);
+ for(const prior of [{...previous,data:{...previous.data,calories:2200}},{...previous,sourceId:'another-id',data:{...previous.data,calories:2200}},{...previous,deleted:true}]){
+  const h=harness(false,[prior]),response=await h.send('remy-etl',[candidate]),out=await response.json();assert.equal(response.status,200);assert.equal(out.conflicts.length,1);assert.deepEqual(h.writes,['original','import']);
+ }
 });

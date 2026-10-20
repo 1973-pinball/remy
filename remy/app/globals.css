@@ -1962,6 +1962,162 @@ a:focus-visible {
 .coach-draft-finished .microcopy {
   margin-top: 8px;
 }
+.historical-summary-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #dce5d3;
+  background: #f2f6eb;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  color: #61744f;
+}
+.historical-summary-notice > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.historical-summary-notice strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #425b32;
+}
+.historical-summary-notice p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 6px 0 0;
+}
+.historical-summary-notice details {
+  margin-top: 10px;
+}
+.historical-summary-notice summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.historical-summary-notice small {
+  display: block;
+  font-size: 10px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.historical-source-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.historical-meals-empty {
+  padding: 20px 10px;
+}
+.historical-meals-empty h3 {
+  margin-top: 0;
+}
+.historical-history > .section-heading {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.historical-history h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.historical-history > .muted {
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+.historical-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid #e3e9dc;
+  border-radius: 8px;
+}
+.historical-table-scroll:focus-visible {
+  outline: 2px solid #9fb985;
+  outline-offset: 3px;
+}
+.historical-table {
+  width: 100%;
+  min-width: 750px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.historical-table th,
+.historical-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e7eddf;
+  font-size: 12px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.historical-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7d5d;
+  background: #f4f7ef;
+}
+.historical-table tbody th {
+  font-weight: 550;
+}
+.historical-table tbody th a {
+  color: #456b31;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.historical-table tr.selected {
+  background: #f1f6e8;
+}
+.historical-table tr:last-child th,
+.historical-table tr:last-child td {
+  border-bottom: 0;
+}
+.historical-table small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: #829174;
+  margin-top: 5px;
+  line-height: 1.6;
+}
+.historical-table .historical-table-source {
+  min-width: 200px;
+  max-width: 360px;
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #6b7c5c;
+}
+.historical-table-source details {
+  margin-top: 7px;
+}
+.historical-table-source summary {
+  cursor: pointer;
+  color: #456b31;
+}
+.historical-table-source p {
+  font-size: 11px;
+  margin: 10px 0;
+}
+.historical-table-source dl {
+  border-top: 1px solid #dfe7d6;
+  padding-top: 8px;
+  margin-top: 10px;
+}
+.historical-table-source dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.historical-table-source small {
+  overflow-wrap: anywhere;
+}
+.historical-import-note {
+  background: #f2f6ea;
+  border: 1px solid #dce6d1;
+  border-radius: 7px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #647b51;
+  margin: 15px 0;
+}
 @media (max-width: 1200px) {
   .coach-layout {
     grid-template-columns: minmax(0, 1fr);

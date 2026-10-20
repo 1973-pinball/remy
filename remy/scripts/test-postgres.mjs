@@ -30,6 +30,28 @@ try {
     return result.rows[0].saved;
   }
   assert.equal((await save(owner,'lunch',450)).entry.revision,1);
+  const historicalData={calories:2300,protein:130,carbs:null,fat:null,fiber:null,coverage:'unknown',notes:'Synthetic historical snapshot'};
+  async function saveDailySummary(id='historical-day',kind='dailySummary'){
+    return (await db.query('select public.remy_save_entry($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) as saved',
+      [owner,id,kind,'2026-09-30','remy-etl','synthetic:day:2026-09-30',JSON.stringify(historicalData),null,false,null])).rows[0].saved;
+  }
+  await assert.rejects(()=>saveDailySummary(),/remy_records_kind_check/,'Old schema must reject the new record kind');
+  await db.exec(await readFile(new URL('../supabase/migrations/202610200001_daily_summaries.sql',import.meta.url),'utf8'));
+  const existingMeal=(await db.query("select data,revision from remy_records where owner=$1 and id='lunch'",[owner])).rows[0];
+  assert.equal(existingMeal.data.calories,450);assert.equal(existingMeal.revision,1,'Kind migration must preserve existing records');
+  const historical=await saveDailySummary();
+  assert.equal(historical.entry.kind,'dailySummary');assert.equal(historical.entry.revision,1);
+  assert.deepEqual(historical.entry.data,historicalData);
+  const historicalReplay=await saveDailySummary('different-client-id');
+  assert.equal(historicalReplay.duplicate,true);assert.equal(historicalReplay.entry.id,'historical-day');
+  assert.equal(historicalReplay.entry.revision,1,'Stable source identity must deduplicate a historical snapshot');
+  assert.equal((await db.query("select count(*)::int as n from remy_records where owner=$1 and kind='dailySummary'",[owner])).rows[0].n,1);
+  await assert.rejects(()=>saveDailySummary('historical-day','meal'),/REMY_KIND_MISMATCH/,'A summary cannot silently become a meal');
+  await assert.rejects(()=>db.query('select remy_save_entries($1,$2)',[owner,JSON.stringify([
+    {id:'rolled-back-summary',kind:'dailySummary',localDate:'2026-09-29',source:'remy-etl',sourceId:'synthetic:day:2026-09-29',data:historicalData},
+    {id:'invalid-kind',kind:'arbitraryKind',localDate:'2026-09-29',data:{}}
+  ])]),/remy_records_kind_check/);
+  assert.equal((await db.query("select count(*)::int as n from remy_records where id in ('rolled-back-summary','invalid-kind')")).rows[0].n,0,'A failed summary import batch must roll back');
   const replay=await save(owner,'lunch',450);
   assert.equal(replay.duplicate,true);assert.equal(replay.entry.revision,1);
   assert.equal((await save(owner,'lunch',550,1)).entry.revision,2);
@@ -49,7 +71,8 @@ try {
   await db.query("select set_config('request.jwt.claim.role','authenticated',false)");
   await db.exec('set role authenticated');
   const visible=(await db.query('select owner from remy_records')).rows;
-  assert.equal(visible.length,2);assert.ok(visible.every(row=>row.owner===owner));
+  assert.equal(visible.length,3);assert.ok(visible.every(row=>row.owner===owner));
+  assert.equal((await db.query("select count(*)::int as n from remy_records where kind='dailySummary'")).rows[0].n,1,'Owner can read the historical snapshot through the same RLS policy');
   await assert.rejects(()=>db.query('select * from remy_secrets'),/permission denied/);
   await assert.rejects(()=>save(other,'attack',1),/permission denied/);
   await assert.rejects(()=>db.query('select remy_operation_state($1,$2)',[owner,'whoop']),/permission denied/);
@@ -103,5 +126,5 @@ try {
   assert.equal((await db.query('select count(*)::int as n from remy_secrets where owner=$1',[owner])).rows[0].n,0);
   await save(owner,'intentional-new-meal',200,null,await state());
   assert.equal((await db.query("select public from storage.buckets where id='remy-files'")).rows[0].public,false);
-  console.log('PostgreSQL migration verified: revisions, replay, batch rollback, undo, owner RLS, secret isolation, token-safe leases, stale deletion/disconnect/reconnect guards, private bucket.');
+  console.log('PostgreSQL migrations verified: historical-summary upgrade, source replay and batch rollback; revisions, undo, owner RLS, secret isolation, token-safe leases, stale deletion/disconnect/reconnect guards, private bucket.');
 } finally { await db.close(); }

@@ -170,6 +170,7 @@ export function ImportDialog({
     }
   }
   function update(i: number, key: string, value: unknown) {
+    setReviewed(false);
     setPreview((p) =>
       p
         ? {
@@ -238,7 +239,7 @@ export function ImportDialog({
                     <p>{c.reason}</p>
                     <a
                       className="text-button"
-                      href={`/?view=${c.incoming.kind === "meal" ? "Food" : "Training"}&date=${c.incoming.date}#${c.recordId}`}
+                      href={`/?view=${["meal", "dailySummary"].includes(c.incoming.kind) ? "Food" : "Training"}&date=${c.incoming.date}#${c.recordId}`}
                     >
                       Review original record
                     </a>
@@ -295,7 +296,7 @@ export function ImportDialog({
             <p className="muted">
               {fit
                 ? "Original FIT records supply the activity summary. Runs already present from another source are matched where the available timestamps and distances support it."
-                : "ChatGPT history requires an explicit export or pasted transcript. Photos and ambiguous corrections need review. Daily totals are never imported as individual meals."}
+                : "Import reviewed meal records, historical daily summaries, or a dated transcript. Photos and ambiguous corrections need review. Historical daily totals are saved separately from meals."}
             </p>
             <button
               disabled={!text || busy}
@@ -332,6 +333,12 @@ export function ImportDialog({
                 {w}
               </p>
             ))}
+            {preview.candidates.some((candidate) => candidate.kind === "dailySummary") && (
+              <p className="historical-import-note">
+                Historical summaries have unknown food-log coverage. Their totals are used only on dates without saved meal entries.
+                Adding any meal makes the saved meals the source of daily totals; the summary stays available for reference.
+              </p>
+            )}
             <div className="import-rows">
               {preview.candidates.map((c, i) => (
                 <div className="import-row" key={i}>
@@ -347,15 +354,19 @@ export function ImportDialog({
                       }
                     />
                     <strong>
-                      {c.date} · {c.kind}
+                      {c.date} · {c.kind === "dailySummary" ? "Historical daily summary" : c.kind}
                     </strong>
                   </label>
-                  <Input
-                    aria-label={`Entry ${i + 1} title`}
-                    value={c.data.title}
-                    onChange={(e) => update(i, "title", e.target.value)}
-                  />
-                  {c.kind === "meal" ? (
+                  {c.kind === "dailySummary" ? (
+                    <p className="muted">Source daily estimate · coverage unknown · stored separately from meals</p>
+                  ) : (
+                    <Input
+                      aria-label={`Entry ${i + 1} title`}
+                      value={c.data.title}
+                      onChange={(e) => update(i, "title", e.target.value)}
+                    />
+                  )}
+                  {c.kind === "meal" || c.kind === "dailySummary" ? (
                     <>
                       <div className="form-grid nutrients">
                         {(
@@ -389,7 +400,7 @@ export function ImportDialog({
                       </div>
                       <details>
                         <summary>
-                          Review Eat to Live contributions and notes
+                          {c.kind === "dailySummary" ? "Review historical food-group totals and source notes" : "Review Eat to Live contributions and notes"}
                         </summary>
                         <div className="form-grid">
                           {etlFields.map(([key, label, unit]) => (
@@ -416,10 +427,14 @@ export function ImportDialog({
                         <p className="muted">
                           {c.data.notes || "No source notes supplied."}
                         </p>
-                        <small>
-                          Nutrition source: {c.data.confidence}. Time eaten:{" "}
-                          {c.data.mealTime ?? "unknown"}.
-                        </small>
+                        {c.kind === "dailySummary" ? (
+                          <small>Nutrition source: estimate. Coverage: unknown. Source message: {c.data.sourceMessageId}.</small>
+                        ) : (
+                          <small>
+                            Nutrition source: {c.data.confidence}. Time eaten:{" "}
+                            {c.data.mealTime ?? "unknown"}.
+                          </small>
+                        )}
                       </details>
                     </>
                   ) : (
@@ -444,7 +459,7 @@ export function ImportDialog({
               />
               <span>
                 I reviewed the selected entries, including portions and
-                corrections.
+                corrections{preview.candidates.some((candidate) => candidate.kind === "dailySummary") ? ", and the unknown coverage of historical summaries" : ""}.
               </span>
             </label>
             <div className="form-actions">

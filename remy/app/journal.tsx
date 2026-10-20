@@ -56,6 +56,7 @@ import {
 } from "./forms";
 import { TrainingView, ConnectionsView, SettingsView } from "./secondary-views";
 import { CoachView } from "./coach";
+import { HistoricalNutritionTable, HistoricalSummaryNotice } from "./historical-nutrition";
 import {
   summarize,
   ofKind,
@@ -430,6 +431,14 @@ function JournalContent() {
           </article>
         ))}
       </div>
+    ) : summary.nutritionSource === "historical-summary" ? (
+      <div className="empty-block historical-meals-empty">
+        <h3>Meal details are not available for this date.</h3>
+        <p>Your historical daily estimate is shown in the totals above. New meal entries become the source of totals for the whole date.</p>
+        <button className="text-button" onClick={() => { setEditing(null); setModal("meal"); }}>
+          Add meal details <Plus size={16} />
+        </button>
+      </div>
     ) : (
       <div className="empty-block">
         <span className="empty-icon">
@@ -459,7 +468,7 @@ function JournalContent() {
           <h2>
             <Leaf size={18} /> Eat to Live, today
           </h2>
-          <span>From individual meals</span>
+          <span>{summary.nutritionSource === "historical-summary" ? "Historical daily estimate · coverage unknown" : "From individual meals"}</span>
         </div>
         <div className="etl-grid">
           {etlFields.slice(0, 10).map(([key, label, unit]) => (
@@ -469,7 +478,7 @@ function JournalContent() {
                 {number(summary.etl[key]?.value)}
                 <small>{unit}</small>
               </strong>
-              {summary.etl[key] &&
+              {summary.nutritionSource !== "historical-summary" && summary.etl[key] &&
                 !summary.etl[key].complete &&
                 summary.etl[key].known > 0 && (
                   <small className="coverage-note">
@@ -480,8 +489,9 @@ function JournalContent() {
           ))}
         </div>
         <p className="microcopy">
-          A dash means unknown. Partial sums show their coverage. These
-          contributions describe your food; they are not automatic quotas.
+          {summary.nutritionSource === "historical-summary"
+            ? "A dash means the source did not provide a value. These are historical daily estimates; meal coverage is unknown."
+            : "A dash means unknown. Partial sums show their coverage. These contributions describe your food; they are not automatic quotas."}
         </p>
         <details>
           <summary>Flex and run fuel</summary>
@@ -746,6 +756,9 @@ function JournalContent() {
           </div>
           {view === "Today" && (
             <>
+              {summary.historicalSummary && summary.nutritionSource === "historical-summary" && (
+                <HistoricalSummaryNotice entry={summary.historicalSummary} active />
+              )}
               <section className="focus-panel">
                 <div className="focus-content">
                   <div className="eyebrow">
@@ -766,12 +779,12 @@ function JournalContent() {
                   </button>
                 </div>
                 <div className="focus-aside">
-                  <span className="eyebrow">CARBOHYDRATES LOGGED</span>
+                  <span className="eyebrow">{summary.nutritionSource === "historical-summary" ? "HISTORICAL CARBOHYDRATE ESTIMATE" : "CARBOHYDRATES LOGGED"}</span>
                   <strong>
                     {value(summary.totals.carbs)}
                     <span>g</span>
                   </strong>
-                  {summary.nutrientCoverage.carbs.known > 0 &&
+                  {summary.nutritionSource !== "historical-summary" && summary.nutrientCoverage.carbs.known > 0 &&
                     !summary.nutrientCoverage.carbs.complete && (
                       <small>
                         Known for {summary.nutrientCoverage.carbs.known}/
@@ -805,7 +818,7 @@ function JournalContent() {
                       to personalize the reference.
                     </p>
                   )}
-                  <small>Broad guidance · adjust to tolerance</small>
+                  <small>{summary.nutritionSource === "historical-summary" ? "Source daily estimate · food coverage unknown" : "Broad guidance · adjust to tolerance"}</small>
                 </div>
               </section>
               <div className="section-heading">
@@ -814,9 +827,9 @@ function JournalContent() {
               </div>
               <div className="stat-grid">
                 <Metric
-                  label="Intake logged"
+                  label={summary.nutritionSource === "historical-summary" ? "Historical daily intake" : "Intake logged"}
                   amount={value(summary.totals.calories, " kcal")}
-                  note={`${summary.day.complete ? "Complete" : "Partial"} log · ${summary.nutrientCoverage.calories.known}/${meals.length} meals with kcal · target ${summary.target.toLocaleString()}`}
+                  note={summary.nutritionSource === "historical-summary" ? "Source daily estimate · food coverage unknown" : `${summary.day.complete ? "Complete" : "Partial"} log · ${summary.nutrientCoverage.calories.known}/${meals.length} meals with kcal · target ${summary.target.toLocaleString()}`}
                   icon={Utensils}
                 />
                 <Metric
@@ -954,25 +967,31 @@ function JournalContent() {
                   ...summary.workouts,
                   ...summary.recovery,
                   ...summary.plans,
+                  ...(summary.nutritionSource === "historical-summary" && summary.historicalSummary ? [summary.historicalSummary] : []),
                 ]}
               />
             </>
           )}
           {view === "Food" && (
             <>
+              {summary.historicalSummary && (
+                <HistoricalSummaryNotice entry={summary.historicalSummary} active={summary.nutritionSource === "historical-summary"} />
+              )}
               <div className="food-summary card">
                 {(
                   ["calories", "protein", "carbs", "fat", "fiber"] as const
                 ).map((k) => (
                   <div key={k}>
-                    <span>{k === "calories" ? "Intake logged" : k}</span>
+                    <span>{k === "calories" ? summary.nutritionSource === "historical-summary" ? "Historical daily intake" : "Intake logged" : k}</span>
                     <strong>
                       {number(
                         summary.totals[k],
                         k === "calories" ? " kcal" : " g",
                       )}
                     </strong>
-                    {!summary.nutrientCoverage[k].complete && (
+                    {summary.nutritionSource === "historical-summary" ? (
+                      <small className="coverage-note">Source estimate</small>
+                    ) : !summary.nutrientCoverage[k].complete && (
                       <small className="coverage-note">
                         {summary.nutrientCoverage[k].known}/{meals.length} meals
                         have values
@@ -984,7 +1003,7 @@ function JournalContent() {
               <section className="card">
                 <div className="section-heading">
                   <h2>{dateTitle}</h2>
-                  <button
+                  {summary.nutritionSource === "historical-summary" ? <span>Food coverage unknown</span> : <button
                     className="quiet-button"
                     onClick={() =>
                       void saveDay({
@@ -997,7 +1016,7 @@ function JournalContent() {
                     {summary.day.complete
                       ? "Reopen logging"
                       : "Finished logging"}
-                  </button>
+                  </button>}
                 </div>
                 {mealList(meals)}
                 <div className="calorie-detail">
@@ -1015,6 +1034,19 @@ function JournalContent() {
                 </div>
               </section>
               {etlPanel()}
+              <HistoricalNutritionTable
+                records={records}
+                selectedDate={date}
+                onOpenDate={(historicalDate) => {
+                  setDate(historicalDate);
+                  setView("Food");
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("view", "Food");
+                  url.searchParams.set("date", historicalDate);
+                  window.history.replaceState(null, "", url.pathname + url.search);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
               {savedMeals.length > 0 && (
                 <section className="card">
                   <div className="section-heading">
@@ -1055,7 +1087,7 @@ function JournalContent() {
                 <p className="muted">
                   Imports retain source identities and revisions. Review photos,
                   uncertain portions, and corrections against the original
-                  conversation. A daily total is a summary, not another meal.
+                  conversation. Historical daily totals are retained as summaries and used only on dates without meal entries.
                 </p>
                 <button
                   className="text-button"
@@ -1199,7 +1231,7 @@ function JournalContent() {
                     <div className="period-summary">
                       <p>
                         <b>
-                          {days.filter((d) => d.day.complete).length}/{period}
+                          {days.filter((d) => d.day.complete && d.nutritionSource !== "historical-summary").length}/{period}
                         </b>{" "}
                         days marked complete
                       </p>
@@ -1209,6 +1241,12 @@ function JournalContent() {
                         </b>{" "}
                         days with food entries
                       </p>
+                      {days.some((day) => day.nutritionSource === "historical-summary") && (
+                        <p>
+                          <b>{days.filter((day) => day.nutritionSource === "historical-summary").length}/{period}</b>{" "}
+                          days represented by historical daily summaries · coverage unknown
+                        </p>
+                      )}
                       <p className="muted">
                         Incomplete days are excluded from complete-day
                         comparisons. An association between food and a difficult

@@ -1,5 +1,5 @@
 import {authorize,body,json,failure} from '@/lib/http';
-import {importMeals,importCalendar,importStrava,importFit,reconcileMealImport} from '@/lib/imports';
+import {importMeals,importCalendar,importStrava,importFit,reconcileMealImport,sameImportData} from '@/lib/imports';
 import {hash,listEntries,saveEntry,uploadOriginal,operationGuard} from '@/lib/store';
 import {persistWorkout} from '@/lib/connections';
 import {profileOf,type Meal,type Plan,type Entry} from '@/lib/domain';
@@ -31,6 +31,15 @@ export async function POST(request:Request){
    }
    const sourceId=item.key,id=`${source}:${item.kind}:${await hash(sourceId)}`;
    const existing=entries.find(e=>e.kind===item.kind&&e.source===source&&e.sourceId===sourceId);
+   if(item.kind==='dailySummary'){
+    // One stable daily snapshot per date. Preserve prior imports and user edits;
+    // a changed source requires explicit review rather than silent replacement.
+    const prior=existing??entries.find(e=>e.kind==='dailySummary'&&e.localDate===item.date&&!e.deleted);
+    if(prior){
+     if(!prior.deleted&&prior.localDate===item.date&&sameImportData(prior.data,item.data)){duplicates++;continue}
+     conflicts.push({key:item.key,recordId:prior.id,reason:'A historical summary already exists or was deleted. Its current version was preserved; review the incoming daily total separately.',incoming:item});continue;
+    }
+   }
    if(item.kind==='meal'){
     const decision=reconcileMealImport(existing as Entry<Meal>|undefined,item);
     if(decision.action==='duplicate'){duplicates++;continue}

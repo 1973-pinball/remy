@@ -1,5 +1,5 @@
 import {localDate,zonedInstant,type Meal,type Plan,type Workout} from './domain';
-import {dateSchema,mealSchema,workoutSchema,planSchema,importCandidateSchema} from './validation';
+import {dateSchema,mealSchema,historicalDailySummarySchema,workoutSchema,planSchema,importCandidateSchema} from './validation';
 import type {z} from 'zod';
 export type Candidate=z.infer<typeof importCandidateSchema>;
 export interface ImportPreview{candidates:Candidate[];warnings:string[];source:string;rawCount:number}
@@ -114,7 +114,7 @@ export function importMeals(text:string,zone='America/New_York'):ImportPreview{
   if(Array.isArray(selected)&&selected.length!==1)throw new Error('Export one selected REMY conversation; this file contains multiple conversations and no unique REMY -- ETL selection.');
   return importConversation(Array.isArray(selected)?selected[0]:selected,zone);
  }
- const rows=Array.isArray(raw)?raw:isObject(raw)?raw.meals:undefined;if(!Array.isArray(rows))throw new Error('Use a meals array, a selected conversation JSON export, or a dated transcript.');
+ const rows=Array.isArray(raw)?raw:isObject(raw)?raw.meals??[]:undefined;if(!Array.isArray(rows))throw new Error('Use a meals array, a selected conversation JSON export, or a dated transcript.');
  const candidates:Candidate[]=[],warnings:string[]=[],occurrences=new Map<string,number>();
  for(const [i,value] of rows.entries()){
   if(!isObject(value)){warnings.push(`Row ${i+1} is not a meal object.`);continue}const r=value;
@@ -127,7 +127,18 @@ export function importMeals(text:string,zone='America/New_York'):ImportPreview{
    candidates.push({key,kind:'meal',date,data,warning});
   }catch{warnings.push(`Row ${i+1} needs review: include date, title and valid nutrition.`)}
  }
- return{candidates,warnings,source:'remy-etl',rawCount:rows.length};
+ const summaries=isObject(raw)?raw.dailySummaries:undefined;
+ if(summaries!==undefined&&!Array.isArray(summaries))throw new Error('dailySummaries must be an array.');
+ for(const [i,value] of (summaries??[]).entries()){
+  try{
+   if(!isObject(value)||typeof value.id!=='string'||!value.id.trim())throw new Error('Missing stable identity');
+   const {id,date,...input}=value;
+   const data=historicalDailySummarySchema.parse(input);
+   candidates.push({key:id,kind:'dailySummary',date:dateSchema.parse(date),data,warning:'Historical daily estimate; coverage is unknown. Stored separately from meals. Any saved meals on this date take precedence and are never added to this total.'});
+  }catch{warnings.push(`Historical summary row ${i+1} needs a stable ID, date, source message and valid estimated totals.`)}
+ }
+ if(!rows.length&&!summaries)throw new Error('Use a meals or dailySummaries array, a selected conversation JSON export, or a dated transcript.');
+ return{candidates,warnings,source:'remy-etl',rawCount:rows.length+(summaries?.length??0)};
 }
 export function importTranscript(text:string,context:{defaultDate?:string|null;messageTime?:string|null;messageId?:string}={}):ImportPreview{
  const candidates:Candidate[]=[],warnings:string[]=['Transcript extraction is conservative. Review every candidate; assistant summaries and cumulative totals are not food entries. Reconcile later corrections before import.'];
@@ -150,11 +161,17 @@ export function importTranscript(text:string,context:{defaultDate?:string|null;m
 
 /** Existing meals remain authoritative after corrections. Imports never silently
  * overwrite or revive them; differences are returned for explicit review. */
+export function sameImportData(a:unknown,b:unknown):boolean{
+ if(a===b)return true;
+ if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>sameImportData(v,b[i]));
+ if(isObject(a)&&isObject(b)){const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&sameImportData(a[k],b[k]))}
+ return false;
+}
 export function reconcileMealImport(existing:{data:Meal;localDate:string|null;deleted?:boolean}|undefined,incoming:Candidate){
  if(!existing)return{action:'insert' as const};
  if(existing.deleted)return{action:'preserve' as const,reason:'This imported meal was deleted. Restore it explicitly from journal history if needed.'};
  const incomingData=incoming.data as Meal;
  const normal=(value:Meal)=>({...value,messageTime:value.messageTime??null});
- if(existing.localDate===incoming.date&&JSON.stringify(normal(existing.data))===JSON.stringify(normal(incomingData)))return{action:'duplicate' as const};
+ if(existing.localDate===incoming.date&&sameImportData(normal(existing.data),normal(incomingData)))return{action:'duplicate' as const};
  return{action:'preserve' as const,reason:'An existing meal differs from this source. Your current meal and corrections were preserved; review the incoming values separately.'};
 }

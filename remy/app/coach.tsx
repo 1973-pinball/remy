@@ -276,6 +276,10 @@ function MealDraft({
 function SavedProgress({ records, date }: { records: Entry[]; date: string }) {
   const progress = useMemo(() => coachProgress(records, date), [records, date]);
   const summary = useMemo(() => summarize(records, date), [records, date]);
+  const historical = summary.nutritionSource === "historical-summary";
+  const totals = historical ? summary.totals : progress.totals;
+  const flexCalories = historical ? summary.etl.flexCalories.value : progress.flex.value;
+  const runFuelCalories = historical ? summary.etl.runFuelCalories.value : progress.runFuelCalories;
   const latestRecovery = [...summary.recovery]
     .filter((entry) => entry.data.recovery != null || entry.data.sleepHours != null)
     .sort((a, b) => b.data.start.localeCompare(a.data.start))[0]?.data;
@@ -287,18 +291,20 @@ function SavedProgress({ records, date }: { records: Entry[]; date: string }) {
     <aside className="coach-context">
       <section className="card coach-totals">
         <div className="section-heading">
-          <h2><Leaf size={17} /> Saved intake</h2>
-          <span>{progress.foodComplete ? "Logging complete" : "Logging in progress"}</span>
+          <h2><Leaf size={17} /> {historical ? "Historical daily intake" : "Saved intake"}</h2>
+          <span>{historical ? "Coverage unknown" : progress.foodComplete ? "Logging complete" : "Logging in progress"}</span>
         </div>
-        <p className="microcopy">Journal totals for {date}. Unsaved drafts are excluded.</p>
+        <p className="microcopy">{historical
+          ? `Source daily estimate for ${date}. Individual meals and food-log coverage are unknown. Adding meals switches the whole date to their saved totals.`
+          : `Journal totals for ${date}. Unsaved drafts are excluded.`}</p>
         <dl className="coach-nutrients">
           {nutrientFields.map(([key, label, unit]) => {
             const coverage = progress.nutrientCoverage[key as keyof Nutrients];
             return (
               <div key={key}>
                 <dt>{label}</dt>
-                <dd>{amount(progress.totals[key], unit)}
-                  {coverage.known > 0 && !coverage.complete && (
+                <dd>{amount(totals[key], unit)}
+                  {!historical && coverage.known > 0 && !coverage.complete && (
                     <small>{coverage.known}/{coverage.total} meals known</small>
                   )}
                 </dd>
@@ -317,30 +323,34 @@ function SavedProgress({ records, date }: { records: Entry[]; date: string }) {
         <details open>
           <summary>Eat to Live priorities <ChevronDown size={16} /></summary>
           <p className="microcopy">Your usual ranges guide choices. Running, digestion and adequate fueling come first. A dash means unknown; bars show known logged amounts.</p>
+          {historical && <p className="microcopy">Food-group amounts below are historical daily estimates with unknown coverage.</p>}
           <div className="coach-etl-rows">
-            {progress.etl.map((field) => (
+            {progress.etl.map((field) => {
+              const fieldValue = historical ? summary.etl[field.key].value : field.value;
+              return (
               <div key={field.key}>
-                <div><span>{field.label}</span><strong>{amount(field.value, field.unit)}</strong></div>
+                <div><span>{field.label}</span><strong>{amount(fieldValue, field.unit)}</strong></div>
                 <div className="coach-meter" aria-hidden="true">
-                  <span style={{ width: `${Math.min(100, ((field.value ?? 0) / field.range[0]) * 100)}%` }} />
+                  <span style={{ width: `${Math.min(100, ((fieldValue ?? 0) / field.range[0]) * 100)}%` }} />
                 </div>
                 <small>
                   Usual {field.range.join("–")} {field.unit}
-                  {field.known > 0 && field.known < field.total ? ` · ${field.known}/${field.total} meals known` : ""}
+                  {!historical && field.known > 0 && field.known < field.total ? ` · ${field.known}/${field.total} meals known` : ""}
                 </small>
               </div>
-            ))}
+            );})}
           </div>
         </details>
         <div className="coach-flex">
-          <strong>Flexible foods: {amount(progress.flex.value, "kcal")}</strong>
+          <strong>{historical ? "Historical flex estimate" : "Flexible foods"}: {amount(flexCalories, "kcal")}</strong>
           <p>Usual guide: about {progress.flex.range.join("–")} kcal.</p>
           <p>
-            {progress.flex.loggedPercent == null
+            {historical ? "The historical summary cannot establish a complete 90/10 balance."
+              : progress.flex.loggedPercent == null
               ? "Log energy and flex estimates for every meal to see the logged flex share."
               : `${amount(progress.flex.loggedPercent, "%")} of ${progress.flex.ratioComplete ? "the completed food log" : "intake logged so far"} is classified as flexible food.`}
           </p>
-          <p>Run fuel: {amount(progress.runFuelCalories, "kcal")} · included in intake.</p>
+          <p>Run fuel: {amount(runFuelCalories, "kcal")} · included in intake.</p>
         </div>
       </section>
       <section className="card coach-training">

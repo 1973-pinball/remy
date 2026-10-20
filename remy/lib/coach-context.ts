@@ -1,4 +1,4 @@
-import {addDays, dayBounds, ofKind, profileOf, round, type Day, type Entry, type EtlField, type Meal, type Nutrients, type Recovery} from './domain';
+import {addDays, dayBounds, ofKind, profileOf, round, type Day, type Entry, type EtlField, type HistoricalDailySummary, type Meal, type Nutrients, type Recovery} from './domain';
 
 /** Reproducible in browser and server; includes changes to the wider advice window. */
 export function coachContextFingerprint(entries: Entry[], date: string) {
@@ -13,7 +13,7 @@ export function coachContextFingerprint(entries: Entry[], date: string) {
     }
     if (!entry.localDate) return false;
     if (entry.kind === 'plan') return entry.localDate >= date && entry.localDate <= through;
-    return ['meal', 'workout', 'day'].includes(entry.kind) && entry.localDate >= from && entry.localDate <= date;
+    return ['meal', 'dailySummary', 'workout', 'day'].includes(entry.kind) && entry.localDate >= from && entry.localDate <= date;
   }).map(entry => `${entry.id}:${entry.revision}`).sort().join('|');
 }
 
@@ -62,6 +62,7 @@ export const COACH_REFERENCES = [
 export const COACH_PRINCIPLES = `
 Support weight maintenance, muscle retention, running performance and recovery within the user's ETL preferences. The configured food and protein ranges are user preferences, not universal requirements, required quotas or restrictive caps. Do not prescribe weight loss or praise restriction.
 Use recorded meals, training duration and intensity, upcoming demanding sessions, recovery trends, hunger and gut tolerance. Separate facts, estimates and unknowns. An incomplete log cannot establish insufficient intake. Do not invent quantities, food-category zeros, body weight, exercise or calorie expenditure.
+Historical daily summaries are estimates with unknown full-day coverage, not individual meals. They provide daily totals only when the day has no meal records. When meals exist, only that meal ledger contributes to totals; never add the historical summary, infer missing meals from the difference or turn a summary into a meal proposal.
 Use body-weight-based gram targets only with a confirmed profile and a finite positive current weight; otherwise keep g/kg guidance conditional. Daily carbohydrate references are 3–5 g/kg for light activity, 5–7 for about one hour of moderate daily training, and 6–10 for about one to three hours of moderate-to-high endurance training. Adapt these references to the whole training context, not a workout title alone. Before exercise over an hour, 1–4 g/kg in the preceding 1–4 hours is a broad reference adjusted to timing and tolerance. Rapid carbohydrate replacement of 1–1.2 g/kg/hour for four hours is chiefly relevant when demanding sessions are less than eight hours apart.
 During endurance exercise of 1–2.5 hours, 30–60 g carbohydrate/hour is a reference; beyond about 2.5–3 hours, up to 90 g/hour may suit practiced tolerance. Do not jump an inexperienced runner directly to high intakes. Higher intakes may need glucose/fructose mixtures and gut practice.
 Preserve the user's 120–135 g protein preference while checking fit against confirmed body weight and training. Spread protein across meals and snacks; approximately 0.3–0.4 g/kg per eating occasion is an AIS reference. Include varied plant protein choices that fit the user's preferences.
@@ -103,6 +104,7 @@ function aggregate(values: unknown[]) {
 }
 
 export interface CoachProgress {
+  nutritionSource: 'meals'|'historical-summary'|'unknown';
   totals: Nutrients;
   nutrientCoverage: Record<keyof Nutrients, Coverage>;
   foodComplete: boolean;
@@ -116,15 +118,18 @@ export interface CoachProgress {
 /** Pure selected-day progress: no clock, profile defaults, device estimates or inferred food. */
 export function coachProgress(entries: Entry[], date: string): CoachProgress {
   const meals = ofKind<Meal>(entries, 'meal').filter(meal => meal.localDate === date);
+  const historical = !meals.length ? ofKind<HistoricalDailySummary>(entries,'dailySummary').filter(s=>s.localDate===date).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id))[0] : undefined;
+  const records = meals.length ? meals.map(m=>m.data) : historical ? [historical.data] : [];
   const totals = {} as Nutrients;
   const nutrientCoverage = {} as Record<keyof Nutrients, Coverage>;
   for (const key of NUTRIENTS) {
-    const {value, ...coverage} = aggregate(meals.map(meal => meal.data[key]));
+    const {value, ...coverage} = aggregate(records.map(data => data[key]));
+    if(historical)coverage.complete=false;
     totals[key] = value;
     nutrientCoverage[key] = coverage;
   }
-  const category = (key: EtlField) => aggregate(meals.map(meal => meal.data.etl?.[key]));
-  const foodComplete = ofKind<Day>(entries, 'day').some(day => day.localDate === date && day.data.complete === true);
+  const category = (key: EtlField) => aggregate(records.map(data => data.etl?.[key]));
+  const foodComplete = !historical && ofKind<Day>(entries, 'day').some(day => day.localDate === date && day.data.complete === true);
   const etl = FOOD_TARGETS.map(target => {
     const {value, known, total} = category(target.key);
     return {...target, value, known, total, range: COACH_TARGETS[target.key]};
@@ -139,6 +144,7 @@ export function coachProgress(entries: Entry[], date: string): CoachProgress {
   const loggedPercent = calorieSum > 0 ? round(flexSum / calorieSum * 100) : null;
 
   return {
+    nutritionSource: meals.length?'meals':historical?'historical-summary':'unknown',
     totals,
     nutrientCoverage,
     foodComplete,
@@ -152,6 +158,7 @@ export function coachProgress(entries: Entry[], date: string): CoachProgress {
     },
     runFuelCalories: category('runFuelCalories').value,
     scopeNotes: [
+      ...(historical?['Displayed totals come from a historical daily estimate with unknown full-day coverage. Individual meals and ETL details cannot be inferred.']:[]),
       'Ranges are your preferences for maintenance and training, not required quotas or hard limits.',
       'Known sums cover recorded meals only. Missing nutrients or food categories remain unknown, including on a day marked complete.',
       'Flex percentage includes all logged calories, including run fuel, and requires explicit flex values for every logged meal. The remainder is not automatically nutrient-dense food.',
