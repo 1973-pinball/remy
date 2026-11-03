@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import * as domain from '../lib/domain';
 import * as weights from '../lib/weight-history';
+import {daySchema} from '../lib/validation';
 import type {Entry} from '../lib/domain';
 
 const baseScope='offline read:cycles read:recovery read:sleep', weightScope=baseScope+' read:body_measurement';
@@ -86,6 +87,18 @@ test('weight history prefers dated weigh-ins, ignores undated profile weight, an
  assert.deepEqual(points.map(point=>point.date),['2026-10-01','2026-11-02']);assert.equal(points[0].measurementDateKnown,false);
  assert.equal(points[0].observedAt,old.observedAt);assert.equal(points[1].weightKg,74);assert.equal(points[1].observedAt,null);
  assert.equal(points[1].measurementDateKnown,true);assert.ok(Math.abs(points[1].weightLb-74/0.45359237)<0.000001);
+});
+
+test('weight provenance survives day validation and is independent of the day’s food source',()=>{
+ const humeDay={...entry('day:2026-08-17','day',daySchema.parse({...domain.emptyDay,weightKg:75.1,weightSource:'hume'}),'2026-08-17'),source:'remy-etl'};
+ const manualDay={...entry('day:2026-08-18','day',daySchema.parse({...domain.emptyDay,weightKg:75,weightSource:'manual'}),'2026-08-18'),source:'remy-etl'};
+ const legacyDay={...entry('day:2026-08-25','day',{...domain.emptyDay,weightKg:75.3},'2026-08-25'),source:'remy-etl'};
+ const points=weights.weightHistory([humeDay,manualDay,legacyDay]);
+ assert.equal(points[0].source,'hume');assert.equal(points[0].sourceLabel,'Hume weigh-in · entered from your history');
+ assert.equal(points[1].source,'manual');assert.equal(points[1].sourceLabel,'Recorded weigh-in');
+ assert.equal(points[2].source,'remy-etl');assert.equal(points[2].sourceLabel,'Dated weight reported in REMY history');
+ assert.equal(humeDay.source,'remy-etl');
+ assert.equal(daySchema.safeParse({...domain.emptyDay,weightKg:75,weightSource:'unsupported'}).success,false);
 });
 
 test('weight permission gates the endpoint and safe connection status never exposes credentials',async()=>{

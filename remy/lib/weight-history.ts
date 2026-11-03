@@ -47,10 +47,14 @@ export function weightHistory(records: Entry[]): WeightHistoryPoint[] {
   }
   const days = ofKind<Day>(records, 'day').filter(entry => validDate(entry.localDate) && validWeight(entry.data.weightKg))
     .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.revision - b.revision || a.id.localeCompare(b.id));
-  for (const entry of days) points.set(entry.localDate!, {
-    date: entry.localDate!, weightKg: entry.data.weightKg!, weightLb: entry.data.weightKg! / 0.45359237,
-    sourceLabel: entry.source === 'remy-etl' ? 'Dated weight reported in REMY history' : 'Recorded weigh-in',
-    source: entry.source, observedAt: null, measurementDateKnown: true,
-  });
+  for (const entry of days) {
+    // A day's food and weight can come from different sources.
+    const source = entry.data.weightSource ?? entry.source;
+    points.set(entry.localDate!, {
+      date: entry.localDate!, weightKg: entry.data.weightKg!, weightLb: entry.data.weightKg! / 0.45359237,
+      sourceLabel: source === 'hume' ? 'Hume weigh-in · entered from your history' : source === 'remy-etl' ? 'Dated weight reported in REMY history' : 'Recorded weigh-in',
+      source, observedAt: null, measurementDateKnown: true,
+    });
+  }
   return [...points.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
