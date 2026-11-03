@@ -9,7 +9,7 @@ test('history uses latest historical estimates until meals replace the whole dat
  const summaries=[entry('old','dailySummary',{...data,calories:9999}),{...entry('new','dailySummary'),updatedAt:'2026-11-03T13:00:00Z'}];
  const historical=nutritionHistory(summaries,day,'all')[0];
  assert.equal(historical.calories,2000);assert.equal(historical.source,'historical-summary');assert.equal(historical.foodComplete,false);
- assert.equal(historical.etlPercent,75);assert.equal(historical.flexPercent,10);assert.equal(historical.runFuelPercent,15);
+ assert.equal(historical.etlPercent,90);assert.equal(historical.flexPercent,10);assert.equal(historical.runFuelPercent,15);
  const meal=nutritionHistory([...summaries,entry('meal','meal',{...data,calories:500,etl:{flexCalories:0,runFuelCalories:0}})],day,'all')[0];
  assert.equal(meal.calories,500);assert.equal(meal.source,'meals');assert.equal(meal.etlPercent,100);
 });
@@ -20,16 +20,18 @@ test('known partial sums retain coverage while entirely unknown days and nutrien
  assert.deepEqual(last.coverage.calories,{known:1,total:2,complete:false});assert.equal(last.shareStatus,'missing-calories');
  assert.equal(last.etlPercent,null);
 });
-test('flex and running fuel partition energy once and unknown classifications never become zero', () => {
+test('running fuel is neutral to ETL balance and independently unknown classifications stay unknown', () => {
  const rows=nutritionHistory([entry('food','meal',{...data,calories:1800,etl:{flexCalories:200,runFuelCalories:0}}),entry('fuel','meal',{...data,calories:200,etl:{flexCalories:0,runFuelCalories:200}})],day,'all');
- const result=rows[0];assert.equal(result.calories,2000);assert.equal(result.etlPercent,80);assert.equal(result.flexPercent,10);assert.equal(result.runFuelPercent,10);
- for(const etl of [{flexCalories:200},{runFuelCalories:200},{flexCalories:0,runFuelCalories:null}]){
-  const partial=nutritionHistory([entry('meal','meal',{...data,etl})],day,'all')[0];
-  assert.equal(partial.shareStatus,'missing-classification');assert.equal(partial.flexPercent,null);assert.equal(partial.runFuelPercent,null);
- }
+ const result=rows[0];assert.equal(result.calories,2000);assert.equal(result.etlPercent,90);assert.equal(result.flexPercent,10);assert.equal(result.runFuelPercent,10);
+ const missingFuel=nutritionHistory([entry('meal','meal',{...data,etl:{flexCalories:200}})],day,'all')[0];
+ assert.equal(missingFuel.etlPercent,90);assert.equal(missingFuel.runFuelPercent,null);
+ const missingFlex=nutritionHistory([entry('meal','meal',{...data,etl:{runFuelCalories:200}})],day,'all')[0];
+ assert.equal(missingFlex.etlPercent,null);assert.equal(missingFlex.runFuelPercent,10);
+ const zeroFlex=nutritionHistory([entry('meal','meal',{...data,etl:{flexCalories:0,runFuelCalories:null}})],day,'all')[0];
+ assert.equal(zeroFlex.etlPercent,100);assert.equal(zeroFlex.runFuelPercent,null);
 });
-test('per-record overlap and zero-energy ratios are rejected without clipping or hiding behind other meals', () => {
- const invalid=nutritionHistory([entry('overlap','meal',{...data,calories:100,etl:{flexCalories:80,runFuelCalories:80}}),entry('other','meal',data)],day,'all')[0];
+test('impossible per-record flex and zero-energy ratios are rejected without clipping or hiding behind other meals', () => {
+ const invalid=nutritionHistory([entry('overlap','meal',{...data,calories:100,etl:{flexCalories:120,runFuelCalories:0}}),entry('other','meal',data)],day,'all')[0];
  assert.equal(invalid.shareStatus,'invalid-classification');assert.equal(invalid.etlPercent,null);
  const zero=nutritionHistory([entry('zero','meal',{...data,calories:0,etl:{flexCalories:0,runFuelCalories:0}})],day,'all')[0];
  assert.equal(zero.calories,0);assert.equal(zero.shareStatus,'zero-calories');assert.equal(zero.flexPercent,null);

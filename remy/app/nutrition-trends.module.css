@@ -7,8 +7,30 @@
 .ranges button { border: 0; background: transparent; color: #6c5f74; font: inherit; font-size: 12px; font-weight: 600; border-radius: 7px; padding: 8px 11px; white-space: nowrap; }
 .ranges button[aria-pressed=true] { background: #fff; color: #3b2946; box-shadow: 0 1px 4px #30203b16; }
 .ranges button:hover { color: #3a2646; background: #efebe5; }
+.averageMeta { display: flex; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; margin: 17px 0 14px; color: #7e6d88; font-size: 11px; }
+.averageGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 0; }
+.averageStat { min-width: 0; padding: 17px 16px 14px; border: 1px solid #e8e1eb; border-radius: 11px; background: #fcfbfa; }
+.averageStat.purple { background: #f4eef7; border-color: #e5d9ed; }
+.averageStat.tan { background: #f5f0e6; border-color: #e7dcc8; }
+.averageStat dt { color: #685672; font-size: 11px; line-height: 1.4; min-height: 16px; font-weight: 550; }
+.averageStat dd { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 5px; margin: 9px 0 7px; color: #3d2949; font-size: clamp(24px,2.5vw,32px); font-weight: 600; line-height: 1.15; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.averageStat dd small { color: #7f6a8c; font-size: 10px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
+.root .averageStat p { margin: 0; color: #887693; font-size: 10px; line-height: 1.5; }
+.nutrientAverages { margin-top: 12px; }
+.nutrientAverages .averageStat { padding-top: 13px; padding-bottom: 12px; background: #fff; border-color: #eee8f0; }
+.nutrientAverages .averageStat dd { font-size: 25px; margin-top: 6px; }
+.averageDetails { border-top: 0!important; padding-top: 0!important; margin-top: 13px!important; }
+.methodNotes { display: grid; gap: 7px; margin-top: 10px; padding: 13px 15px; background: #f9f7f4; border-radius: 9px; }
+.root .methodNotes p { margin: 0; color: #7c6c85; font-size: 11px; line-height: 1.65; }
+.chartHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-top: 25px; padding-top: 23px; border-top: 1px solid #eae3ed; }
+.root .chartHeading h3 { margin: 0 0 5px; color: #483651; font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+.root .chartHeading p { margin: 0; color: #82738c; font-size: 11px; }
+.chartHeading>span { color: #82738c; font-size: 11px; }
 .meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; color: #82738c; font-size: 11px; padding: 15px 0 18px; margin-bottom: 4px; }
 .grid { display: grid; grid-template-columns: 1fr 1.35fr; gap: 15px; }
+.header+.grid { margin-top: 18px; }
+.historyCharts { display: grid; gap: 15px; }
+.energyChart { height: 300px; width: 100%; min-width: 0; }
 .panel { min-width: 0; border: 1px solid #ebe8e3; border-radius: 10px; padding: 18px 16px 10px; background: linear-gradient(180deg,#fdfcfb 0%,#fff 100%); }
 .panelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .root .panel h3 { margin: 0 0 2px; font-size: 14px; font-weight: 650; }
@@ -50,6 +72,7 @@
 .values tbody th button { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: #553a66; text-decoration: underline; text-underline-offset: 3px; }
 .values td:last-child { color: #80718a; font-size: 10px; }
 @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .averageGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 600px) {
   .root { padding: 17px 12px; }
   .header { gap: 14px; }
@@ -59,5 +82,13 @@
   .panel { padding: 14px 8px 8px; }
   .chart { height: 220px; }
   .shareChart { height: 215px; }
+  .energyChart { height: 260px; }
   .meta { padding-top: 11px; }
+  .averageGrid { gap: 9px; }
+  .averageStat { padding: 13px 11px; }
+  .averageStat dt { font-size: 10px; }
+  .averageStat dd { font-size: 27px; }
+  .averageStat dd small { font-size: 9px; }
+  .root .averageStat p { font-size: 9px; }
+  .averageMeta { font-size: 10px; }
 }

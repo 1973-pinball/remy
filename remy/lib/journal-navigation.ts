@@ -1,3 +1,10 @@
+import { localDate } from './domain';
+export function boundedJournalDate(value: string | null | undefined, timezone = 'America/New_York', now = new Date()) {
+  const today = localDate(now, timezone);
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return today;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return !Number.isFinite(+parsed) || parsed.toISOString().slice(0,10) !== value || value > today ? today : value;
+}
 export type JournalView = 'Today' | 'History';
 export type JournalUtility = 'Connections' | 'Settings' | null;
 export function journalDestination(value: string | null | undefined): {

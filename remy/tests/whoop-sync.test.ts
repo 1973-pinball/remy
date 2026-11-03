@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import * as domain from '../lib/domain';
+import * as weightHistory from '../lib/weight-history';
 import type {Entry} from '../lib/domain';
 
 const code=ts.transpileModule(readFileSync(new URL('../lib/connections.ts',import.meta.url),'utf8'),{
@@ -28,7 +29,7 @@ function harness(payloads:Record<string,unknown[]>,entries:Entry[]=[existing]){
   saveEntries:async(_owner:string,inputs:Write[])=>{batch.push(...structuredClone(inputs));},
   saveEntry:async(_owner:string,input:Write)=>{status.push(structuredClone(input));},
  };
- const modules:Record<string,unknown>={'server-only':{},'./store':store,'./domain':domain,'./imports':{}};
+ const modules:Record<string,unknown>={'server-only':{},'./store':store,'./domain':domain,'./imports':{},'./weight-history':weightHistory};
  const module={exports:{}} as {exports:typeof import('../lib/connections')};
  const fetch=async(input:string)=>{
   const url=new URL(input);assert.equal(url.origin,'https://api.prod.whoop.com');

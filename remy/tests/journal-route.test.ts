@@ -6,6 +6,7 @@ import ts from 'typescript';
 import * as validation from '../lib/validation';
 import * as domain from '../lib/domain';
 import * as journalDate from '../lib/journal-date';
+import * as journalNavigation from '../lib/journal-navigation';
 
 // Exercise the actual handler with isolated Auth/storage boundaries. This lets
 // deletion complete between guard capture and a slow body without cloud access.
@@ -60,6 +61,7 @@ function harness(input: unknown, options: { slow?: boolean; deleting?: boolean; 
     '@/lib/domain': domain,
     '@/lib/validation': validation,
     '@/lib/journal-date': journalDate,
+    '@/lib/journal-navigation': journalNavigation,
     '@/lib/http': {
       async authorize() { return { userId: 'owner', email: 'owner@example.com', fullName: null }; },
       async body() { bodyStarted.resolve(); return options.slow ? bodyReady.promise : input; },

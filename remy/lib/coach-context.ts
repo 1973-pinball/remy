@@ -1,4 +1,5 @@
 import {addDays, dayBounds, ofKind, profileOf, round, type Day, type Entry, type EtlField, type HistoricalDailySummary, type Meal, type Nutrients, type Recovery} from './domain';
+import { dailyClassification } from './daily-classification';
 
 /** Reproducible in browser and server; includes changes to the wider advice window. */
 export function coachContextFingerprint(entries: Entry[], date: string) {
@@ -69,7 +70,7 @@ Preserve the user's 120–135 g protein preference while checking fit against co
 Do not let large vegetable or bean portions displace adequate energy, carbohydrate or comfortable eating. Move bulky or high-fiber foods away from runs when helpful and suggest familiar, tolerable carbohydrate choices. Do not impose a permanent low-fiber or low-FODMAP diet; recurrent symptoms need individualized assessment.
 Keep calorie goals provisional until supported by adequate logs and longer-term weight, performance and recovery trends. WHOOP expenditure is an estimate over physiological cycles that can cross calendar days. Do not add workout calories again to a WHOOP total, diagnose underfueling from a subtraction, or treat a recovery score as a diagnosis.
 For selected-day recovery and sleep, use today.recovery.selected and its explicit dateBasis. Sleep-completion dates are local to the supplied timezone; a cycle can begin the prior evening. Do not substitute a later morning's recovery, including figures quoted in earlier conversation. Cycle-start fallback dates are provisional, and unknown attribution remains unknown. Recovery history with metricsScope after-selected-period has its later sleep/recovery measurements withheld. Expenditure and strain use the supplied cycleMetricsScope and cycle period, never the selected calendar day; ongoing-cycle values are current recorded estimates with an as-of time. Running week totals are through the selected date; future planned sessions are separate.
-Count run-fuel calories and carbohydrate once in total intake, while showing run fuel separately for timing. Flex percentage means explicitly classified flex calories divided by all logged calories, including run fuel. Report it only when every logged meal has known calories and an explicit valid flex classification, and distinguish complete logged-record coverage from a complete food day. Missing flex values are unknown, not zero. The remainder is not automatically nutrient-dense food. A fixed 280–300 kcal allowance is exactly 10% only at 2,800–3,000 kcal; a personal exemption for run fuel would be a different, explicitly named convention.
+Count run-fuel calories and carbohydrate once in total intake, while showing run fuel separately for timing. The user's ETL balance is 100% minus regular-flex calories divided by all logged calories; dedicated running fuel is neutral to this score and is not subtracted again. A reviewed daily conversation estimate can supply regular-flex classification even when individual meal classifications are missing; it never adds calories or nutrients. Use only a current, revision-bound estimate supplied in context. Older historical classifications may include running fuel; preserve that qualification and any source range. Missing classifications are unknown, not zero. The remainder is not an independent assessment of nutrient density. A fixed 280–300 kcal allowance is exactly 10% only at 2,800–3,000 kcal. Distinguish complete recorded classification from a complete food day.
 Avoid diagnosing deficiencies, injuries or REDs from app data. Offer a few concrete, preference-aware next actions, identify the evidence and limitations that matter, and use the supplied references rather than inventing research.
 `.trim();
 
@@ -142,7 +143,9 @@ export function coachProgress(entries: Entry[], date: string): CoachProgress {
   );
   const calorieSum = ratioCovered ? meals.reduce((sum, meal) => sum + meal.data.calories!, 0) : 0;
   const flexSum = ratioCovered ? meals.reduce((sum, meal) => sum + meal.data.etl!.flexCalories!, 0) : 0;
-  const loggedPercent = calorieSum > 0 ? round(flexSum / calorieSum * 100) : null;
+  const reviewed = dailyClassification(entries,date).value;
+  const sourceFlex = reviewed ? reviewed.regularFlexCalories ?? (reviewed.regularFlexRange ? (reviewed.regularFlexRange[0]+reviewed.regularFlexRange[1])/2 : null) : null;
+  const loggedPercent = sourceFlex !== null && reviewed ? round(sourceFlex / reviewed.totalCalories * 100) : calorieSum > 0 ? round(flexSum / calorieSum * 100) : null;
 
   return {
     nutritionSource: meals.length?'meals':historical?'historical-summary':'unknown',
@@ -152,17 +155,18 @@ export function coachProgress(entries: Entry[], date: string): CoachProgress {
     protein: {value: totals.protein, range: COACH_TARGETS.protein},
     etl,
     flex: {
-      value: flex.value,
+      value: sourceFlex ?? flex.value,
       range: COACH_TARGETS.flexCalories,
       loggedPercent,
       ratioComplete: foodComplete && loggedPercent !== null,
     },
-    runFuelCalories: category('runFuelCalories').value,
+    runFuelCalories: reviewed?.runFuelCalories ?? category('runFuelCalories').value,
     scopeNotes: [
       ...(historical?['Displayed totals come from a historical daily estimate with unknown full-day coverage. Individual meals and ETL details cannot be inferred.']:[]),
       'Ranges are your preferences for maintenance and training, not required quotas or hard limits.',
       'Known sums cover recorded meals only. Missing nutrients or food categories remain unknown, including on a day marked complete.',
-      'Flex percentage includes all logged calories, including run fuel, and requires explicit flex values for every logged meal. The remainder is not automatically nutrient-dense food.',
+      'Regular-flex percentage uses all logged calories as its denominator. ETL balance is its complement; running fuel is neutral to the score. The remainder is not automatically nutrient-dense food.',
+      ...(reviewed ? [`Regular-flex classification comes from a reviewed daily REMY conversation estimate bound to the current food records. ${reviewed.convention === 'historical-flex-including-any-run-fuel' ? 'This historical flex bucket included any running fuel, before the separate training-fuel rule.' : 'Dedicated running fuel is separate from regular flex.'}${reviewed.regularFlexRange ? ` Source flex range ${reviewed.regularFlexRange[0]}–${reviewed.regularFlexRange[1]} kcal; the displayed value is its midpoint.` : ''}`] : []),
       'Run fuel is shown separately and is already part of meal calorie totals; it is not added again.',
       'Confirm preparation, serving sizes and category overlap before comparing portions; do not count the same portion twice within a category.',
     ],

@@ -3,6 +3,7 @@ import { getEntry, listEntries, saveEntry, undo, deleteJournal, operationGuard, 
 import { dateSchema, mealSchema, profileSchema, daySchema, planSchema, workoutSchema } from '@/lib/validation';
 import { summarize, localDate, profileOf, type Kind } from '@/lib/domain';
 import { assertJournalDate } from '@/lib/journal-date';
+import { boundedJournalDate } from '@/lib/journal-navigation';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +11,8 @@ export async function GET(request: Request) {
   try {
     const user = await authorize(request);
     const entries = await listEntries(user.userId);
-    const date = dateSchema.parse(new URL(request.url).searchParams.get('date') ?? localDate(new Date(), profileOf(entries).timezone));
+    const requestedDate = dateSchema.parse(new URL(request.url).searchParams.get('date') ?? localDate(new Date(), profileOf(entries).timezone));
+    const date = boundedJournalDate(requestedDate,profileOf(entries).timezone);
     return json({ entries, summary: summarize(entries, date), user: { id: user.userId, name: user.fullName ?? '', email: user.email }, chatAvailable: !!process.env.OPENAI_API_KEY?.trim() });
   } catch (error) { return failure(error); }
 }

@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { Activity, ChartNoAxesCombined, Info } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { nutritionHistory, shareExplanation, type NutritionHistoryDay, type NutritionRange } from "@/lib/nutrition-history";
-import type { Entry, Nutrients } from "@/lib/domain";
+import { nutritionHistory, shareExplanation, type NutritionHistoryDay } from "@/lib/nutrition-history";
+import { dailyEnergyHistory, nutritionPeriodSummary, type SummaryRange } from "@/lib/thirty-day-summary";
+import { weightHistory } from "@/lib/weight-history";
+import { localDate, profileOf, type Entry, type Nutrients } from "@/lib/domain";
 import styles from "./nutrition-trends.module.css";
 
 const nutrients = [
@@ -14,7 +16,7 @@ const nutrients = [
   {key:"fiber",label:"Fiber",color:"#527fa5",dash:"2 3"},
 ] as const;
 const shares = [
-  {key:"etlPercent",label:"ETL",color:"#735191",dash:undefined},
+  {key:"etlPercent",label:"ETL balance",color:"#735191",dash:undefined},
   {key:"flexPercent",label:"Flex",color:"#af8540",dash:"7 3"},
   {key:"runFuelPercent",label:"Running fuel",color:"#527fa5",dash:"2 3"},
 ] as const;
@@ -23,58 +25,117 @@ const fullDate = (date:string) => new Intl.DateTimeFormat("en-US",{month:"short"
 const value = (amount:number|null, unit:string) => amount == null ? "Unknown" : `${amount.toLocaleString("en-US",{maximumFractionDigits:1})}${unit === "%" ? "" : " "}${unit}`;
 const sourceLabel = (day:NutritionHistoryDay) => day.source === "historical-summary" ? "Historical estimate · day coverage unknown"
   : day.source === "unknown" ? "No saved intake" : day.foodComplete ? "Saved meals · logging marked complete" : "Saved meals · day coverage incomplete";
+const shareSourceLabel=(day:NutritionHistoryDay)=>day.shareBasis==='daily-conversation-estimate'?'Reviewed daily estimate from REMY':day.shareBasis==='historical-conversation-estimate'?'Earlier REMY estimate · original flex convention':day.shareBasis==='meal-estimates'?'Classified meal estimates':'Classification unavailable';
+
+function AverageStat({label,amount,unit,coverage,tone,signed=false}:{label:string;amount:number|null;unit:string;coverage:string;tone?:"tan"|"purple";signed?:boolean}) {
+  const formatted=amount===null?'—':`${signed&&amount>0?'+':''}${amount.toLocaleString('en-US',{maximumFractionDigits:unit==='kcal/day'?0:1})}`;
+  return <div className={`${styles.averageStat}${tone?` ${styles[tone]}`:''}`}>
+    <dt>{label}</dt><dd>{formatted}<small>{unit}</small></dd><p>{coverage}</p>
+  </div>;
+}
+
+type EnergyPoint={date:string;calories:number|null;burnKcal:number|null;weightLb:number|null;burnStatus:string;foodSource:string;weightSource?:string};
+function EnergyTooltip({active,payload}:{active?:boolean;payload?:readonly {payload?:EnergyPoint}[]}) {
+  const day=payload?.[0]?.payload;if(!active||!day)return null;
+  return <div className={styles.tooltip}><strong>{fullDate(day.date)}</strong><dl>
+    <div><dt><i style={{background:'#735191'}}/>Calories eaten</dt><dd>{value(day.calories,'kcal')}</dd></div>
+    <div><dt><i style={{background:'#af8540'}}/>Estimated burn</dt><dd>{value(day.burnKcal,'kcal')}</dd></div>
+    <div><dt><i style={{background:'#527fa5'}}/>Weight</dt><dd>{value(day.weightLb,'lb')}</dd></div>
+  </dl><small>{day.foodSource}</small><small>{day.burnStatus==='complete'?'WHOOP cycle estimate allocated by elapsed time':day.burnStatus==='overlap'?'Overlapping WHOOP periods; burn is unknown':day.burnStatus==='partial'?'WHOOP covers only part of this date':'No completed WHOOP cycle coverage'}</small>{day.weightSource&&<small>{day.weightSource}</small>}</div>;
+}
 
 function ChartTooltip({active,payload,kind}:{active?:boolean;payload?:readonly {payload?:NutritionHistoryDay}[];kind:"energy"|"nutrients"|"shares"}) {
   const day=payload?.[0]?.payload;
   if(!active||!day)return null;
   const fields=kind==="energy"?[{key:"calories",label:"Energy",color:"#735191"}]:kind==="shares"?shares:nutrients;
   return <div className={styles.tooltip}>
-    <strong>{fullDate(day.date)}</strong><small>{sourceLabel(day)}</small>
+    <strong>{fullDate(day.date)}</strong><small>{kind==='shares'?shareSourceLabel(day):sourceLabel(day)}</small>
     <dl>{fields.map(field=>{
       const key=field.key as keyof NutritionHistoryDay, amount=day[key] as number|null;
       const coverage=kind!=="shares"?day.coverage[field.key as keyof Nutrients]:null;
-      return <div key={field.key}><dt><i style={{background:field.color}}/>{field.label}</dt><dd>{value(amount,kind==="shares"?"%":kind==="energy"?"kcal":"g")}
+      return <div key={field.key}><dt><i style={{background:field.color}}/>{field.label}</dt><dd>{field.key==='etlPercent'&&day.etlPercentRange?`${value(day.etlPercentRange[0],'%')}–${value(day.etlPercentRange[1],'%')}`:value(amount,kind==="shares"?"%":kind==="energy"?"kcal":"g")}
+        {field.key==='etlPercent'&&day.etlPercentRange&&<small>{value(day.etlPercent,'%')} midpoint plotted</small>}
         {day.source==="meals"&&coverage&&coverage.known>0&&coverage.known<coverage.total&&<small>{coverage.known}/{coverage.total} meals known</small>}</dd></div>;
     })}</dl>
-    {kind==="shares"&&<p>{shareExplanation[day.shareStatus]}</p>}
+    {kind==="shares"&&<><p>{day.shareBasis==='historical-conversation-estimate'?'This earlier source estimate retains its original flex convention.':shareExplanation[day.shareStatus]}</p>{day.shareNotes&&<p>{day.shareNotes}</p>}</>}
   </div>;
 }
 
 export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry[];selectedDate:string;onOpenDate:(date:string)=>void}) {
-  const [range,setRange]=useState<NutritionRange>("all");
+  const [range,setRange]=useState<SummaryRange>(30);
   const [visible,setVisible]=useState<string[]>(nutrients.map(n=>n.key));
-  const through=useMemo(()=>range==='all'?records.filter(e=>!e.deleted&&["meal","dailySummary"].includes(e.kind)&&e.localDate)
-    .reduce((last,e)=>e.localDate!>last?e.localDate!:last,selectedDate):selectedDate,[records,selectedDate,range]);
-  const days=useMemo(()=>nutritionHistory(records,through,range),[records,through,range]);
+  const through=useMemo(()=>records.filter(e=>!e.deleted&&["meal","dailySummary"].includes(e.kind)&&e.localDate)
+    .reduce((last,e)=>e.localDate!>last?e.localDate!:last,"")||selectedDate,[records,selectedDate]);
+  const days=useMemo(()=>nutritionHistory(records,through,"all"),[records,through]);
+  const averages=useMemo(()=>nutritionPeriodSummary(records,selectedDate,range),[records,selectedDate,range]);
+  const weights=useMemo(()=>weightHistory(records),[records]);
+  const energyDays=useMemo(()=>{
+    const zone=profileOf(records).timezone,today=localDate(new Date(),zone);
+    const cycleDates=records.filter(entry=>!entry.deleted&&entry.kind==='recovery').flatMap(entry=>[entry.data.start,entry.data.end]
+      .filter((instant):instant is string=>typeof instant==='string'&&Number.isFinite(Date.parse(instant))).map(instant=>localDate(instant,zone)));
+    const dates=[...days.filter(day=>day.source!=='unknown').map(day=>day.date),...weights.map(point=>point.date),...cycleDates].filter(date=>date<=today).sort();
+    const start=dates[0]??through,end=dates.at(-1)??through;
+    const foodByDate=new Map(days.map(day=>[day.date,day])),weightByDate=new Map(weights.map(point=>[point.date,point]));
+    return dailyEnergyHistory(records,start,end).map(day=>{
+      const food=foodByDate.get(day.date),weight=weightByDate.get(day.date);
+      return {...day,calories:food?.calories??null,weightLb:weight?.weightLb??null,foodSource:food?sourceLabel(food):'No saved food for this date',weightSource:weight?.sourceLabel} satisfies EnergyPoint;
+    });
+  },[records,days,weights,through]);
   const recorded=days.filter(day=>day.source!=="unknown").length;
-  const classified=days.filter(day=>day.shareStatus==="known").length;
+  const classified=days.filter(day=>day.etlPercent!==null).length;
   const estimates=days.filter(day=>day.source==="historical-summary").length;
-  const energyDays=days.filter(day=>day.calories!==null).length;
+  const weightDays=energyDays.filter(day=>day.weightLb!==null).length;
+  const hasEnergy=energyDays.some(day=>day.calories!==null||day.burnKcal!==null||day.weightLb!==null);
+  const rangeEstimates=averages.days.filter(day=>day.etlPercentRange!==null).length;
+  const legacyEstimates=averages.days.filter(day=>day.shareBasis==='historical-conversation-estimate').length;
   const from=days[0]?.date??through;
   const axes=<><CartesianGrid stroke="#e8e1eb" strokeDasharray="3 4" vertical={false}/>
     <XAxis dataKey="date" tickFormatter={shortDate} tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false} minTickGap={26} interval="preserveStartEnd" tickMargin={10}/></>;
   return <section className={`card ${styles.root}`} aria-labelledby="nutrition-trends-heading">
     <header className={styles.header}>
-      <div><p className={styles.eyebrow}><Activity size={14}/> YOUR SAVED HISTORY</p><h2 id="nutrition-trends-heading">Daily nutrition trends</h2>
-        <p className={styles.subtitle}>Energy, nutrients, and how your logged calories break down.</p></div>
-      <div className={styles.ranges} role="group" aria-label="Nutrition chart date range">{([7,14,28,"all"] as const).map(option=>
+      <div><p className={styles.eyebrow}><Activity size={14}/> YOUR SAVED HISTORY</p><h2 id="nutrition-trends-heading">Your daily averages</h2>
+        <p className={styles.subtitle}>Food, estimated burn, and your Eat to Live balance.</p></div>
+      <div className={styles.ranges} role="group" aria-label="Headline average lookback">{([7,14,30,"all"] as const).map(option=>
         <button type="button" key={option} aria-pressed={range===option} onClick={()=>setRange(option)}>{option==="all"?"All history":`${option} days`}</button>)}</div>
     </header>
-    <div className={styles.meta}><span>{fullDate(from)} – {fullDate(through)}</span><span>{recorded} of {days.length} days have records{estimates>0?` · ${estimates} historical estimates`:""}</span></div>
-    {!recorded?<div className={styles.empty}><ChartNoAxesCombined size={28}/><h3>No saved intake in this range</h3><p>Log food or import your history to see daily trends. Dates without records stay unknown.</p></div>:<>
-      <div className={styles.grid}>
+    <div className={styles.averageMeta}><span>{fullDate(averages.from)} – {fullDate(averages.through)}</span><span>{averages.dayCount} completed {averages.dayCount===1?'day':'days'} · selection changes averages only</span></div>
+    <dl className={styles.averageGrid} aria-label="Energy and Eat to Live averages">
+      <AverageStat label="Calories eaten" amount={averages.nutrients.calories.average} unit="kcal/day" coverage={`${averages.nutrients.calories.knownDays}/${averages.dayCount} days with logged calories`} tone="purple"/>
+      <AverageStat label="Estimated calories burned" amount={averages.burn.average} unit="kcal/day" coverage={`${averages.burn.knownDays}/${averages.dayCount} days covered by WHOOP`} tone="tan"/>
+      <AverageStat label="Eaten − burned" amount={averages.comparison.differenceAverage} unit="kcal/day" signed coverage={`${averages.comparison.pairedDays}/${averages.dayCount} matched days${averages.comparison.pairedDays?` · ${Math.round(averages.comparison.intakeAverage!).toLocaleString()} − ${Math.round(averages.comparison.burnAverage!).toLocaleString()}`:' · no comparable daily values'}`}/>
+      <AverageStat label="ETL balance" amount={averages.etl.percent} unit="%" coverage={`${averages.etl.classifiedDays}/${averages.dayCount} days classified${rangeEstimates?` · ${rangeEstimates} source ranges`:''}`} tone="purple"/>
+    </dl>
+    <dl className={`${styles.averageGrid} ${styles.nutrientAverages}`} aria-label="Daily nutrient averages">
+      {nutrients.map(n=><AverageStat key={n.key} label={n.label} amount={averages.nutrients[n.key].average} unit="g/day" coverage={`${averages.nutrients[n.key].knownDays}/${averages.dayCount} days with values${averages.nutrients[n.key].partialDays?` · ${averages.nutrients[n.key].partialDays} partial`:''}`}/>)}
+    </dl>
+    <details className={`${styles.values} ${styles.averageDetails}`}><summary>How these averages are calculated</summary><div className={styles.methodNotes}>
+      <p>Intake averages use days with recorded values; missing days are not zero. {averages.nutrients.calories.partialDays>0?`${averages.nutrients.calories.partialDays} calorie totals have missing meal estimates. `:''}A logged day can still be incomplete.</p>
+      <p>{averages.method.burn}</p><p>{averages.method.comparison} {averages.comparison.pairedDays>0?`For those matched days: ${value(averages.comparison.intakeAverage,'kcal/day')} eaten and ${value(averages.comparison.burnAverage,'kcal/day')} estimated burned.`:''}</p>
+      <p>{averages.method.etl} {averages.etl.percent===null?'No complete ETL classification is available in this lookback.':''}</p>
+      {rangeEstimates>0&&<p>{rangeEstimates} {rangeEstimates===1?'day was':'days were'} reported as a range. The graph and weighted average use the midpoint; the original range remains in the tooltip.</p>}
+      {legacyEstimates>0&&<p>{legacyEstimates} earlier daily estimates use the original flex convention, which included any running fuel. They retain that source definition here; tooltips identify those dates.</p>}
+      <p>Today is excluded until it is complete as a calendar day. The date above sets the end of the lookback; all graphs below always show the full saved history.</p>
+    </div></details>
+    <div className={styles.chartHeading}><div><h3>Daily nutrition trends</h3><p>Full history · the lookback above does not crop these graphs.</p></div><span>{fullDate(from)} – {fullDate(through)}</span></div>
+    <div className={styles.meta}><span>{recorded} of {days.length} days have records{estimates>0?` · ${estimates} historical estimates`:""}</span></div>
+    {!recorded&&!hasEnergy?<div className={styles.empty}><ChartNoAxesCombined size={28}/><h3>No saved history yet</h3><p>Log food or connect WHOOP to see daily trends. Dates without records stay unknown.</p></div>:<>
+      <div className={styles.historyCharts}>
         <div className={styles.panel}>
-          <div className={styles.panelHeader}><div><h3>Daily energy</h3><p>Kilocalories · saved intake</p></div><span>{energyDays} {energyDays===1?'day':'days'} with values</span></div>
-          <div className={styles.legend}><span><i style={{background:"#735191"}}/>Calories</span></div>
-          <div className={styles.chart} aria-label="Daily calories chart, measured in kilocalories">
-            <ResponsiveContainer width="100%" height="100%" initialDimension={{width:320,height:240}}>
-              <LineChart accessibilityLayer data={days} margin={{top:8,right:12,bottom:8,left:0}}>
-                {axes}<YAxis width={43} domain={[0,"auto"]} tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString("en-US")}/>
-                <Tooltip content={<ChartTooltip kind="energy"/>} filterNull={false}/>
-                <Line type="linear" dataKey="calories" name="Calories" stroke="#735191" strokeWidth={2.5} connectNulls={false} dot={{r:days.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:5,fill:"#735191",stroke:"#fff",strokeWidth:2}} isAnimationActive={false}/>
+          <div className={styles.panelHeader}><div><h3>Calories & weight</h3><p>Left axis: calories · right axis: pounds</p></div><span>{fullDate(energyDays[0]?.date??from)} – {fullDate(energyDays.at(-1)?.date??through)}</span></div>
+          <div className={styles.legend}><span><i style={{background:"#735191"}}/>Calories eaten</span><span><i style={{background:"#af8540"}}/>Estimated burn</span><span><i style={{background:"#527fa5"}}/>Weight · lb</span></div>
+          <div className={styles.energyChart} aria-label="Full-history calories eaten and burned on the left axis; weight in pounds on the right axis">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{width:680,height:300}}>
+              <LineChart accessibilityLayer data={energyDays} margin={{top:14,right:8,bottom:8,left:0}}>
+                {axes}<YAxis yAxisId="calories" width={50} domain={[0,"auto"]} tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString("en-US")} label={{value:'kcal',position:'insideTopLeft',fill:'#776b7d',fontSize:10,offset:-13}}/>
+                <YAxis yAxisId="weight" orientation="right" width={52} domain={['auto','auto']} ticks={weightDays?undefined:[]} tick={{fill:'#527fa5',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:1})} label={{value:'lb',position:'insideTopRight',fill:'#527fa5',fontSize:10,offset:-13}}/>
+                <Tooltip content={<EnergyTooltip/>} filterNull={false}/>
+                <Line yAxisId="calories" type="linear" dataKey="calories" name="Calories eaten" stroke="#735191" strokeWidth={2.2} connectNulls={false} dot={{r:energyDays.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:5,fill:"#735191",stroke:"#fff",strokeWidth:2}} isAnimationActive={false}/>
+                <Line yAxisId="calories" type="linear" dataKey="burnKcal" name="Estimated burn" stroke="#af8540" strokeWidth={2} strokeDasharray="6 3" connectNulls={false} dot={{r:energyDays.length<=31?2:1.2,fill:'#fff'}} activeDot={{r:4}} isAnimationActive={false}/>
+                <Line yAxisId="weight" type="linear" dataKey="weightLb" name="Weight (lb)" stroke="#527fa5" strokeWidth={2} connectNulls={false} dot={{r:3,fill:'#527fa5',stroke:'#fff',strokeWidth:1}} activeDot={{r:5}} isAnimationActive={false}/>
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <p className={styles.shareNote}>Burn is a daily estimate allocated from completed WHOOP cycles; workout calories are not added again. {weightDays?`${weightDays} weight ${weightDays===1?'record':'records'} shown on recorded or observed dates; gaps are not filled.`:'No dated weight readings yet. A current profile weight is not backfilled into earlier days.'}</p>
         </div>
         <div className={styles.panel}>
           <div className={styles.panelHeader}><div><h3>Daily nutrients</h3><p>Grams · toggle a series below</p></div></div>
@@ -92,7 +153,7 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
         </div>
       </div>
       <div className={`${styles.panel} ${styles.sharePanel}`}>
-        <div className={styles.panelHeader}><div><h3>Daily energy shares</h3><p>Percent of recorded calories · ETL, flex, and running fuel</p></div><span>{classified} of {days.length} dates classified</span></div>
+        <div className={styles.panelHeader}><div><h3>Eat to Live balance</h3><p>ETL balance, regular flex, and running fuel</p></div><span>{classified} of {days.length} ETL dates classified</span></div>
         <div className={styles.legend}>{shares.map(s=><span key={s.key}><i style={{background:s.color}}/>{s.label}</span>)}</div>
         {classified?<div className={styles.shareChart} aria-label="Daily ETL, flex, and running-fuel percentages of recorded energy">
           <ResponsiveContainer width="100%" height="100%" initialDimension={{width:680,height:230}}>
@@ -102,11 +163,11 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
               {shares.map(s=><Line key={s.key} type="linear" dataKey={s.key} name={s.label} stroke={s.color} strokeDasharray={s.dash} strokeWidth={2} connectNulls={false} dot={{r:days.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:4}} isAnimationActive={false}/>)}
             </LineChart>
           </ResponsiveContainer>
-        </div>:<p className={styles.classificationEmpty}>Energy shares are not available for this range. Each saved record needs total calories and explicit, separate flex and running-fuel calories.</p>}
-        <p className={styles.shareNote}>ETL = total calories − flex − running fuel. Each share uses the same total; running fuel is counted once. ETL here is the remaining energy under this convention, not a separate food-quality assessment.</p>
+        </div>:<p className={styles.classificationEmpty}>ETL balance is not available yet. Total calories and regular-flex calories need a recorded classification.</p>}
+        <p className={styles.shareNote}>ETL balance excludes regular flex. Running fuel is shown separately and does not reduce the score, so these percentages are not intended to add to 100%.</p>
       </div>
     </>}
-    <details className={styles.values}><summary>About partial logs & missing values</summary><div className={styles.note}><Info size={16}/><p>These are recorded amounts, not assumed full-day intake. Known partial sums keep their coverage in the tooltip. Missing values break the lines; shares stay blank if any classification is missing or flex plus running fuel exceeds a record’s calories. Saved meals replace the whole historical summary for the same date.</p></div></details>
+    <details className={styles.values}><summary>About partial logs & missing values</summary><div className={styles.note}><Info size={16}/><p>These are recorded amounts, not assumed full-day intake. Known partial sums keep their coverage in the tooltip. Missing values break the lines. ETL balance needs a regular-flex classification; running-fuel percentages remain unknown when that breakdown is missing. Saved meals take precedence over historical nutrition totals for the same date.</p></div></details>
     <details className={styles.values}>
       <summary>Daily history · {recorded} recorded {recorded===1?'day':'days'}</summary>
       <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Daily nutrition history"><table>

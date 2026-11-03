@@ -60,7 +60,7 @@ import { TodayOverview } from "./today-overview";
 import { HistoryExertion } from "./history-exertion";
 import { MealPhoto } from "./meal-photo";
 import { COACH_TARGETS } from "@/lib/coach-context";
-import { journalDestination, type JournalView, type JournalUtility } from "@/lib/journal-navigation";
+import { boundedJournalDate, journalDestination, type JournalView, type JournalUtility } from "@/lib/journal-navigation";
 import layout from "./journal-layout.module.css";
 import { ownedDeviceDrafts, claimUnassignedDeviceDrafts } from "@/lib/device-drafts";
 import { nextMealSuggestion } from "@/lib/next-meal";
@@ -139,6 +139,7 @@ function JournalContent() {
     profile = summary.profile,
     workouts = ofKind<Workout>(records, "workout"),
     savedMeals = ofKind<Meal>(records, "savedMeal");
+  const today = localDate(new Date(), profile.timezone);
   const clearPrivateView = useCallback(() => {
     refreshVersion.current++;
     setEntries([]);
@@ -181,7 +182,9 @@ function JournalContent() {
     setUtility(destination.utility ?? journalDestination(url.searchParams.get("utility")).utility);
     setSection(destination.section);
     const day = url.searchParams.get("date");
-    if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) setDate(day);
+    const bounded = boundedJournalDate(day);
+    setDate(bounded);
+    if (day && day !== bounded) { url.searchParams.set("date", bounded); window.history.replaceState(null, "", url.pathname + url.search + url.hash); }
     setDemoEntries(sampleEntries(localDate()));
     try {
       const stored = JSON.parse(localStorage.getItem("remy-offline-drafts") ?? "[]");
@@ -220,7 +223,15 @@ function JournalContent() {
     if (target)
       document.getElementById(target)?.scrollIntoView({ block: "center" });
   }, [view, date, records]);
-  const selectDate = (selectedDate: string, selectedView: string = view, recordId?: string) => {
+  useEffect(() => {
+    const bounded = boundedJournalDate(date, profile.timezone);
+    if (bounded === date) return;
+    setDate(bounded);
+    const url = new URL(window.location.href); url.searchParams.set("date", bounded);
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, [date, profile.timezone, today]);
+  const selectDate = (requestedDate: string, selectedView: string = view, recordId?: string) => {
+    const selectedDate = boundedJournalDate(requestedDate, profile.timezone);
     const destination = journalDestination(selectedView);
     setDate(selectedDate);
     setView(destination.utility ? view : destination.view);
@@ -627,11 +638,13 @@ function JournalContent() {
               <Input
                 type="date"
                 aria-label="Journal date"
+                max={today}
                 value={date}
                 onChange={(e) => e.target.value && selectDate(e.target.value)}
               />
               <button
                 aria-label="Next day"
+                disabled={date >= today}
                 onClick={() => selectDate(addDays(date, 1))}
               >
                 <ChevronRight size={16} />

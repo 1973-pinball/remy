@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
+  distDir: process.env.REMY_BUILD_DIR || ".next",
   poweredByHeader: false,
   async headers() {
     return [

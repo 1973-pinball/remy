@@ -83,8 +83,8 @@ export function TrainingView({ entries, date, onEdit, onSave }: {
 }
 
 type Provider = 'whoop' | 'strava' | 'runna' | 'tredict';
-type ConnectionData = { provider: Provider; disconnected?: boolean; authorized?: boolean; lastSuccess?: string | null; lastAttempt?: string | null; earliest?: string | null; latest?: string | null; count?: number; complete?: boolean; error?: string | null; coverageNote?: string; missingFields?: string[] };
-type ConnectionState = { configured: Partial<Record<Provider, boolean>>; authorized: Partial<Record<Provider, boolean>>; statuses: Entry<ConnectionData>[]; configurationErrors?: Partial<Record<Provider, string>> };
+type ConnectionData = { provider: Provider; disconnected?: boolean; authorized?: boolean; lastSuccess?: string | null; lastAttempt?: string | null; earliest?: string | null; latest?: string | null; count?: number; complete?: boolean; error?: string | null; coverageNote?: string; missingFields?: string[]; weightPermission?: boolean; weightLastObservedAt?: string | null; weightError?: string | null };
+type ConnectionState = { configured: Partial<Record<Provider, boolean>>; authorized: Partial<Record<Provider, boolean>>; statuses: Entry<ConnectionData>[]; configurationErrors?: Partial<Record<Provider, string>>; permissions?: {whoop?: {weight: boolean}} };
 const sources: { id: Provider; name: string; summary: string }[] = [
   { id: 'whoop', name: 'WHOOP', summary: 'Cycle energy, exertion, recovery and sleep to put nutrition in context.' },
   { id: 'strava', name: 'Strava', summary: 'Weekly mileage and completed runs. Your detailed activity analysis stays in Strava.' },
@@ -146,16 +146,24 @@ export function ConnectionsView({ demo, onImport, onRefresh }: { demo: boolean; 
         const active = authorized && status?.disconnected !== true;
         const disabled = demo || busy !== null || loading;
         const oauth = source.id === 'whoop' || source.id === 'strava';
+        const weightAuthorized = source.id === 'whoop' && state?.permissions?.whoop?.weight === true;
         const connectionLabel = demo ? 'Not connected' : configurationError ? 'Needs attention' : status?.disconnected ? 'Disconnected' : status?.error ? 'Needs attention' : active ? 'Connected' : 'Not connected';
         return <section className="card" key={source.id}>
           <div className="section-heading"><h2>{source.name}</h2><span className={connectionLabel === 'Not connected' ? 'pill connection-unconnected' : connectionLabel === 'Connected' ? 'pill connection-connected' : 'pill'}>{connectionLabel}</span></div>
           <p className="muted">{source.summary}</p>
+          {source.id === 'whoop' && active && <div className="muted" style={{fontSize:12,lineHeight:1.6,marginTop:12}}>
+            <strong>{weightAuthorized ? 'Weight sync enabled' : 'Weight sync needs additional permission'}</strong>
+            <p>WHOOP supplies your current profile weight. A sync records when Remy observed it; it cannot recover past weigh-in dates.</p>
+            {status?.weightLastObservedAt && <p>Latest weight observation: {timestamp(status.weightLastObservedAt)}</p>}
+            {status?.weightError && <p role="status">Weight could not refresh: {status.weightError} Your running and recovery sync is separate.</p>}
+          </div>}
           {configurationError && <p className="error" role="alert">{configurationError} {oauth ? `Use Connect ${source.name} to replace the saved authorization.` : source.id === 'runna' ? 'Add the private calendar feed again to replace the saved connection.' : 'Add your personal token again to replace the saved connection.'}</p>}
           {status && <div style={{ fontSize: 13, lineHeight: 1.7, margin: '15px 0', color: 'var(--muted-foreground)' }}><div>Last successful sync: {timestamp(status.lastSuccess)}</div>{status.earliest && status.latest && <div>Observed history: {dateLabel(status.earliest)}–{dateLabel(status.latest)}{typeof status.count === 'number' ? ` · ${status.count} records in last sync` : ''}</div>}{status.coverageNote && <div>{status.coverageNote}</div>}{status.missingFields?.length ? <div>Unavailable: {status.missingFields.join(', ')}.</div> : null}{status.complete === false && <div>Coverage is partial. Missing records are not zero values.</div>}{status.error && <p className="error" role="alert">{status.error}</p>}</div>}
           {!demo && !ready && oauth && <p className="muted" style={{ fontSize: 12 }}>This connection needs the owner’s provider app setup. {source.id === 'strava' ? 'You can import an activities.csv export now.' : 'Add the WHOOP app credentials to enable authorization.'}</p>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginTop: 16 }}>
             {active ? <><button disabled={disabled} className="quiet-button" onClick={() => void action(source.id, 'sync')}><RefreshCw size={15} className={busy === source.id ? 'animate-spin' : ''} />{busy === source.id ? 'Working…' : 'Sync now'}</button><button disabled={disabled} className="text-button" onClick={() => void action(source.id, 'disconnect')}>Disconnect</button></> : oauth && ready && !demo ? <a className="quiet-button" href={source.id === 'whoop' ? '/api/whoop' : '/api/connections?provider=strava&action=connect'}><Link2 size={15} />Connect {source.name}</a> : !oauth ? <button disabled={disabled} className="quiet-button" onClick={() => { setCredentialFor(credentialFor === source.id ? null : source.id); setCredential(''); }}>{source.id === 'runna' ? 'Add calendar feed' : 'Add personal token'}</button> : <button className="quiet-button" disabled><Link2 size={15} />Connect {source.name}</button>}
             {status?.disconnected && ready && authorized && !demo && <button disabled={disabled} className="text-button" onClick={() => void action(source.id, 'enable')}>Enable and sync</button>}
+            {source.id === 'whoop' && active && ready && !weightAuthorized && !demo && <a className="quiet-button" href="/api/whoop?weight=1" aria-disabled={disabled} onClick={event => {if(disabled)event.preventDefault();}}>Enable weight sync <ArrowUpRight size={15}/></a>}
             {(source.id === 'strava' || source.id === 'runna') && <button className="text-button" onClick={onImport}><Upload size={15} />{source.id === 'strava' ? 'Import activities.csv' : 'Import calendar (.ics)'}</button>}
           </div>
           {credentialFor === source.id && <form style={{ marginTop: 18 }} onSubmit={event => { event.preventDefault(); void action(source.id, 'credential'); }}><Field label={source.id === 'runna' ? 'Private Runna calendar feed URL' : 'Tredict personal API token'} hint={source.id === 'runna' ? 'Use the subscription URL supplied by Runna. Import the ICS file if your feed host is unsupported.' : 'Use a personal token with activityRead permission.'}><Input type="password" autoComplete="off" value={credential} onChange={event => setCredential(event.target.value)} required placeholder={source.id === 'runna' ? 'https://…' : 'Personal token'} /></Field><button className="primary-button" disabled={disabled || !credential.trim()}>Save connection</button></form>}
