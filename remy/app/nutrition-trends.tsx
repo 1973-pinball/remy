@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Activity, ChartNoAxesCombined, Info } from "lucide-react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { nutritionHistory, shareExplanation, type NutritionHistoryDay } from "@/lib/nutrition-history";
 import { dailyEnergyHistory, nutritionPeriodSummary, type SummaryRange } from "@/lib/thirty-day-summary";
 import { weightHistory } from "@/lib/weight-history";
@@ -20,6 +20,13 @@ const shares = [
   {key:"flexPercent",label:"Flex",color:"#af8540",dash:"7 3"},
   {key:"runFuelPercent",label:"Running fuel",color:"#527fa5",dash:"2 3"},
 ] as const;
+const energySeries = [
+  {key:'netKcal',label:'Eaten − burned',color:'#4f3264',axis:'calories',unit:'kcal',dash:undefined},
+  {key:'calories',label:'Calories eaten',color:'#9676ac',axis:'calories',unit:'kcal',dash:undefined},
+  {key:'burnKcal',label:'Estimated burn',color:'#af8540',axis:'calories',unit:'kcal',dash:'6 3'},
+  {key:'weightLb',label:'Weight · lb',color:'#527fa5',axis:'weight',unit:'lb',dash:undefined},
+] as const;
+type EnergySeriesKey=typeof energySeries[number]['key'];
 const shortDate = (date:string) => new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(`${date}T12:00:00Z`));
 const fullDate = (date:string) => new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}).format(new Date(`${date}T12:00:00Z`));
 const value = (amount:number|null, unit:string) => amount == null ? "Unknown" : `${amount.toLocaleString("en-US",{maximumFractionDigits:1})}${unit === "%" ? "" : " "}${unit}`;
@@ -34,14 +41,12 @@ function AverageStat({label,amount,unit,coverage,tone,signed=false}:{label:strin
   </div>;
 }
 
-type EnergyPoint={date:string;calories:number|null;burnKcal:number|null;weightLb:number|null;burnStatus:string;foodSource:string;weightSource?:string};
-function EnergyTooltip({active,payload}:{active?:boolean;payload?:readonly {payload?:EnergyPoint}[]}) {
+type EnergyPoint={date:string;calories:number|null;burnKcal:number|null;netKcal:number|null;weightLb:number|null;burnStatus:string;foodSource:string;weightSource?:string};
+function EnergyTooltip({active,payload,visible}:{active?:boolean;payload?:readonly {payload?:EnergyPoint}[];visible:EnergySeriesKey[]}) {
   const day=payload?.[0]?.payload;if(!active||!day)return null;
   return <div className={styles.tooltip}><strong>{fullDate(day.date)}</strong><dl>
-    <div><dt><i style={{background:'#735191'}}/>Calories eaten</dt><dd>{value(day.calories,'kcal')}</dd></div>
-    <div><dt><i style={{background:'#af8540'}}/>Estimated burn</dt><dd>{value(day.burnKcal,'kcal')}</dd></div>
-    <div><dt><i style={{background:'#527fa5'}}/>Weight</dt><dd>{value(day.weightLb,'lb')}</dd></div>
-  </dl><small>{day.foodSource}</small><small>{day.burnStatus==='complete'?'WHOOP cycle estimate allocated by elapsed time':day.burnStatus==='overlap'?'Overlapping WHOOP periods; burn is unknown':day.burnStatus==='partial'?'WHOOP covers only part of this date':'No completed WHOOP cycle coverage'}</small>{day.weightSource&&<small>{day.weightSource}</small>}</div>;
+    {energySeries.filter(series=>visible.includes(series.key)).map(series=><div key={series.key}><dt><i style={{background:series.color}}/>{series.label}</dt><dd>{series.key==='netKcal'&&day.netKcal!==null&&day.netKcal>0?'+':''}{value(day[series.key],series.unit)}</dd></div>)}
+  </dl>{(visible.includes('calories')||visible.includes('netKcal'))&&<small>{day.foodSource}</small>}{(visible.includes('burnKcal')||visible.includes('netKcal'))&&<small>{day.burnStatus==='complete'?'WHOOP cycle estimate allocated by elapsed time':day.burnStatus==='overlap'?'Overlapping WHOOP periods; burn is unknown':day.burnStatus==='partial'?'WHOOP covers only part of this date':'No completed WHOOP cycle coverage'}</small>}{visible.includes('weightLb')&&day.weightSource&&<small>{day.weightSource}</small>}</div>;
 }
 
 function ChartTooltip({active,payload,kind}:{active?:boolean;payload?:readonly {payload?:NutritionHistoryDay}[];kind:"energy"|"nutrients"|"shares"}) {
@@ -64,6 +69,7 @@ function ChartTooltip({active,payload,kind}:{active?:boolean;payload?:readonly {
 export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry[];selectedDate:string;onOpenDate:(date:string)=>void}) {
   const [range,setRange]=useState<SummaryRange>(30);
   const [visible,setVisible]=useState<string[]>(nutrients.map(n=>n.key));
+  const [energyVisible,setEnergyVisible]=useState<EnergySeriesKey[]>(['netKcal']);
   const through=useMemo(()=>records.filter(e=>!e.deleted&&["meal","dailySummary"].includes(e.kind)&&e.localDate)
     .reduce((last,e)=>e.localDate!>last?e.localDate!:last,"")||selectedDate,[records,selectedDate]);
   const days=useMemo(()=>nutritionHistory(records,through,"all"),[records,through]);
@@ -78,9 +84,21 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
     const foodByDate=new Map(days.map(day=>[day.date,day])),weightByDate=new Map(weights.map(point=>[point.date,point]));
     return dailyEnergyHistory(records,start,end).map(day=>{
       const food=foodByDate.get(day.date),weight=weightByDate.get(day.date);
-      return {...day,calories:food?.calories??null,weightLb:weight?.weightLb??null,foodSource:food?sourceLabel(food):'No saved food for this date',weightSource:weight?.sourceLabel} satisfies EnergyPoint;
+      const calories=food?.calories??null;
+      const netKcal=calories!==null&&Number.isFinite(calories)&&calories>=0&&day.burnStatus==='complete'&&day.burnKcal!==null&&Number.isFinite(day.burnKcal)?calories-day.burnKcal:null;
+      return {...day,calories,netKcal,weightLb:weight?.weightLb??null,foodSource:food?sourceLabel(food):'No saved food for this date',weightSource:weight?.sourceLabel} satisfies EnergyPoint;
     });
   },[records,days,weights,through]);
+  const calorieSeriesVisible=energyVisible.some(key=>key!=='weightLb');
+  const weightVisible=energyVisible.includes('weightLb');
+  const selectedEnergyHasData=energyDays.some(day=>energyVisible.some(key=>day[key]!==null));
+  const calorieDomain=useMemo<[number,number]>(()=>{
+    const values=energyDays.flatMap(day=>energyVisible.filter(key=>key!=='weightLb').map(key=>day[key]).filter((amount):amount is number=>amount!==null&&Number.isFinite(amount)));
+    const lower=Math.min(0,...values),upper=Math.max(0,...values);
+    if(lower===upper)return[-1,1];
+    const step=10**Math.floor(Math.log10((upper-lower)/5));
+    return[lower<0?Math.floor(lower/step)*step:0,upper>0?Math.ceil(upper/step)*step:0];
+  },[energyDays,energyVisible]);
   const recorded=days.filter(day=>day.source!=="unknown").length;
   const classified=days.filter(day=>day.etlPercent!==null).length;
   const estimates=days.filter(day=>day.source==="historical-summary").length;
@@ -121,21 +139,22 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
     {!recorded&&!hasEnergy?<div className={styles.empty}><ChartNoAxesCombined size={28}/><h3>No saved history yet</h3><p>Log food or connect WHOOP to see daily trends. Dates without records stay unknown.</p></div>:<>
       <div className={styles.historyCharts}>
         <div className={styles.panel}>
-          <div className={styles.panelHeader}><div><h3>Calories & weight</h3><p>Left axis: calories · right axis: pounds</p></div><span>{fullDate(energyDays[0]?.date??from)} – {fullDate(energyDays.at(-1)?.date??through)}</span></div>
-          <div className={styles.legend}><span><i style={{background:"#735191"}}/>Calories eaten</span><span><i style={{background:"#af8540"}}/>Estimated burn</span><span><i style={{background:"#527fa5"}}/>Weight · lb</span></div>
-          <div className={styles.energyChart} aria-label="Full-history calories eaten and burned on the left axis; weight in pounds on the right axis">
-            <ResponsiveContainer width="100%" height="100%" initialDimension={{width:680,height:300}}>
+          <div className={styles.panelHeader}><div><h3>Calories & weight</h3><p>{calorieSeriesVisible?'Left axis: calories':''}{calorieSeriesVisible&&weightVisible?' · ':''}{weightVisible?'Right axis: pounds':''}{!energyVisible.length?'Choose a series below':''}</p></div><span>{fullDate(energyDays[0]?.date??from)} – {fullDate(energyDays.at(-1)?.date??through)}</span></div>
+          <div className={styles.legend} role="group" aria-label="Visible calorie and weight series">{energySeries.map(series=><button type="button" key={series.key} aria-pressed={energyVisible.includes(series.key)}
+            onClick={()=>setEnergyVisible(current=>current.includes(series.key)?current.filter(key=>key!==series.key):[...current,series.key])}><i style={{background:series.color}}/>{series.label}</button>)}</div>
+          <div className={styles.energyChart} aria-label={`Full-history chart: ${energySeries.filter(series=>energyVisible.includes(series.key)).map(series=>series.label).join(', ')||'no series selected'}`}>
+            {energyVisible.length&&selectedEnergyHasData?<ResponsiveContainer width="100%" height="100%" initialDimension={{width:680,height:300}}>
               <LineChart accessibilityLayer data={energyDays} margin={{top:14,right:8,bottom:8,left:0}}>
-                {axes}<YAxis yAxisId="calories" width={50} domain={[0,"auto"]} tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString("en-US")} label={{value:'kcal',position:'insideTopLeft',fill:'#776b7d',fontSize:10,offset:-13}}/>
-                <YAxis yAxisId="weight" orientation="right" width={52} domain={['auto','auto']} ticks={weightDays?undefined:[]} tick={{fill:'#527fa5',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:1})} label={{value:'lb',position:'insideTopRight',fill:'#527fa5',fontSize:10,offset:-13}}/>
-                <Tooltip content={<EnergyTooltip/>} filterNull={false}/>
-                <Line yAxisId="calories" type="linear" dataKey="calories" name="Calories eaten" stroke="#735191" strokeWidth={2.2} connectNulls={false} dot={{r:energyDays.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:5,fill:"#735191",stroke:"#fff",strokeWidth:2}} isAnimationActive={false}/>
-                <Line yAxisId="calories" type="linear" dataKey="burnKcal" name="Estimated burn" stroke="#af8540" strokeWidth={2} strokeDasharray="6 3" connectNulls={false} dot={{r:energyDays.length<=31?2:1.2,fill:'#fff'}} activeDot={{r:4}} isAnimationActive={false}/>
-                <Line yAxisId="weight" type="linear" dataKey="weightLb" name="Weight (lb)" stroke="#527fa5" strokeWidth={2} connectNulls={false} dot={{r:3,fill:'#527fa5',stroke:'#fff',strokeWidth:1}} activeDot={{r:5}} isAnimationActive={false}/>
+                {axes}<YAxis yAxisId="calories" hide={!calorieSeriesVisible} width={58} domain={calorieDomain} allowDataOverflow tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString("en-US")} label={{value:'kcal',position:'insideTopLeft',fill:'#776b7d',fontSize:10,offset:-13}}/>
+                {weightVisible&&<YAxis yAxisId="weight" orientation="right" width={52} domain={['auto','auto']} ticks={weightDays?undefined:[]} tick={{fill:'#527fa5',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:1})} label={{value:'lb',position:'insideTopRight',fill:'#527fa5',fontSize:10,offset:-13}}/>}
+                {energyVisible.includes('netKcal')&&<ReferenceLine yAxisId="calories" y={0} stroke="#9b88a6" strokeDasharray="4 4"/>}
+                <Tooltip content={<EnergyTooltip visible={energyVisible}/>} filterNull={false}/>
+                {energySeries.filter(series=>energyVisible.includes(series.key)).map(series=><Line key={series.key} yAxisId={series.axis} type="linear" dataKey={series.key} name={series.label} stroke={series.color} strokeWidth={series.key==='netKcal'?2.5:2} strokeDasharray={series.dash}
+                  connectNulls={series.key==='weightLb'} dot={{r:series.key==='weightLb'?3:energyDays.length<=31?2.5:1.5,fill:series.key==='weightLb'?series.color:'#fff',strokeWidth:1.5}} activeDot={{r:5,fill:series.color,stroke:'#fff',strokeWidth:2}} isAnimationActive={false}/>)}
               </LineChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>:<p className={styles.noSeries}>{energyVisible.length?'No known values for the selected series yet. Choose another series above to view available records.':'Choose a calorie or weight series above to show its history.'}</p>}
           </div>
-          <p className={styles.shareNote}>Burn is a daily estimate allocated from completed WHOOP cycles; workout calories are not added again. {weightDays?`${weightDays} weight ${weightDays===1?'record':'records'} shown on recorded or observed dates; gaps are not filled.`:'No dated weight readings yet. A current profile weight is not backfilled into earlier days.'}</p>
+          <p className={styles.shareNote}>{energyVisible.includes('netKcal')?'Eaten − burned is shown only where logged calories and a full-day burn estimate are both known; the dashed line marks zero. ':''}{calorieSeriesVisible?'Burn is allocated from completed WHOOP cycles; workout calories are not added again. ':''}{weightVisible?(weightDays?`${weightDays} weight ${weightDays===1?'record':'records'} shown on recorded or observed dates.${weightDays>1?' The line connects observations; weights between them remain unknown.':''}`:'No dated weight readings yet. A current profile weight is not backfilled into earlier days.'):''}</p>
         </div>
         <div className={styles.panel}>
           <div className={styles.panelHeader}><div><h3>Daily nutrients</h3><p>Grams · toggle a series below</p></div></div>
@@ -167,7 +186,7 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
         <p className={styles.shareNote}>ETL balance excludes regular flex. Running fuel is shown separately and does not reduce the score, so these percentages are not intended to add to 100%.</p>
       </div>
     </>}
-    <details className={styles.values}><summary>About partial logs & missing values</summary><div className={styles.note}><Info size={16}/><p>These are recorded amounts, not assumed full-day intake. Known partial sums keep their coverage in the tooltip. Missing values break the lines. ETL balance needs a regular-flex classification; running-fuel percentages remain unknown when that breakdown is missing. Saved meals take precedence over historical nutrition totals for the same date.</p></div></details>
+    <details className={styles.values}><summary>About partial logs & missing values</summary><div className={styles.note}><Info size={16}/><p>These are recorded amounts, not assumed full-day intake. Known partial sums keep their coverage in the tooltip. Missing nutrition and burn values break their lines. The weight line joins observations without filling in unknown weights between them. ETL balance needs a regular-flex classification; running-fuel percentages remain unknown when that breakdown is missing. Saved meals take precedence over historical nutrition totals for the same date.</p></div></details>
     <details className={styles.values}>
       <summary>Daily history · {recorded} recorded {recorded===1?'day':'days'}</summary>
       <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Daily nutrition history"><table>
