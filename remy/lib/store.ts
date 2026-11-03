@@ -1,6 +1,9 @@
 import 'server-only';
 import {createAdminClient} from './supabase/admin';
 import type {Entry,Kind} from './domain';
+import type {CoachImage} from './coach-types';
+import {validateCoachImage} from './coach-model';
+import {assertMealPhotoPath} from './meal-photo';
 
 type Row={id:string;kind:Kind;local_date:string|null;source:string;source_id:string;revision:number;updated_at:string;data:Record<string,unknown>;deleted:boolean};
 const PAGE_SIZE=500;
@@ -19,6 +22,24 @@ export async function undo(owner:string,id:string,expectedRevision:number,guard?
 export async function hash(text:string){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');}
 
 async function journalState(owner:string){const {data,error}=await createAdminClient().rpc('remy_journal_state',{p_owner:ownerId(owner)});storageError(error);return data as {generation:number;deleting:boolean};}
+export async function saveMealPhoto(owner:string,proposalId:string,image:CoachImage,guard:OperationGuard):Promise<string>{
+  ownerId(owner);validateCoachImage(image);
+  const identity=/^coach-proposal:([0-9a-f-]{36}):([0-5])$/i.exec(proposalId);
+  if(!identity)throw new Error('Invalid meal photo identity.');
+  const before=await journalState(owner);
+  if(before.deleting||before.generation!==guard.generation)throw Object.assign(new Error('The journal changed before this photo could be saved.'),{status:409});
+  const extension=image.mimeType==='image/jpeg'?'jpg':image.mimeType==='image/png'?'png':'webp';
+  const path=assertMealPhotoPath(owner,`${owner}/${guard.generation}/meal-photos/${identity[1]}-${identity[2]}.${extension}`);
+  const bucket=createAdminClient().storage.from(BUCKET);
+  const {error}=await bucket.upload(path,Buffer.from(image.base64,'base64'),{contentType:image.mimeType,upsert:true,cacheControl:'0'});storageError(error);
+  try {
+    const after=await journalState(owner);
+    if(after.deleting||after.generation!==guard.generation)throw Object.assign(new Error('The journal changed during the photo upload.'),{status:409});
+  }catch(error){await bucket.remove([path]);throw error;}
+  return path;
+}
+export async function removeMealPhoto(owner:string,path:string){assertMealPhotoPath(ownerId(owner),path);const {error}=await createAdminClient().storage.from(BUCKET).remove([path]);storageError(error);}
+export async function readMealPhoto(owner:string,path:string){assertMealPhotoPath(ownerId(owner),path);const {data,error}=await createAdminClient().storage.from(BUCKET).download(path);storageError(error);if(!data)throw new Error('This meal photo is no longer available.');return data;}
 export async function uploadOriginal(owner:string,path:string,text:string,guard?:OperationGuard){ownerId(owner);if(!path||path.startsWith('/')||path.split('/').some(p=>!p||p==='.'||p==='..')||!/^[a-zA-Z0-9/_-]+$/.test(path))throw new Error('Invalid import storage path.');if(new TextEncoder().encode(text).byteLength>10_000_000)throw new Error('Original import exceeds the 10 MB storage limit.');const before=await journalState(owner);if(guard&&guard.generation!==before.generation)throw Object.assign(new Error('The journal changed during this import. Refresh before trying again.'),{status:409});if(before.deleting)throw new Error('Journal deletion is in progress.');const objectPath=`${owner}/${before.generation}/${path}`,db=createAdminClient();const {error}=await db.storage.from(BUCKET).upload(objectPath,text,{contentType:'text/plain',upsert:true});storageError(error);const after=await journalState(owner);if(after.deleting||after.generation!==before.generation){await db.storage.from(BUCKET).remove([objectPath]);throw new Error('The journal changed during upload. Please retry.');}return{path:objectPath,bucket:BUCKET};}
 async function objectPaths(owner:string){const bucket=createAdminClient().storage.from(BUCKET),paths:string[]=[];async function walk(prefix:string){for(let offset=0;;offset+=PAGE_SIZE){const {data,error}=await bucket.list(prefix,{limit:PAGE_SIZE,offset,sortBy:{column:'name',order:'asc'}});storageError(error);for(const item of data??[]){const full=`${prefix}/${item.name}`;if(item.id)paths.push(full);else await walk(full);}if((data?.length??0)<PAGE_SIZE)break;}}await walk(ownerId(owner));return paths;}
 export async function exportJournal(owner:string){const entries=await listEntries(owner,true),revisions:unknown[]=[];for(let offset=0;;offset+=PAGE_SIZE){const {data,error}=await createAdminClient().from('remy_revisions').select('record_id,revision,snapshot,created_at').eq('owner',ownerId(owner)).order('record_id').order('revision').range(offset,offset+PAGE_SIZE-1);storageError(error);revisions.push(...data??[]);if((data?.length??0)<PAGE_SIZE)break;}const files=await objectPaths(owner);return{version:1,exportedAt:new Date().toISOString(),entries,revisions,files,filesNote:'Original files remain private; this export lists their paths. Credentials are never exported.'};}

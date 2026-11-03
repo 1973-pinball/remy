@@ -117,7 +117,8 @@ test('model context excludes identity, raw provider data, routes, credentials an
   assert.equal(result.profile.weightKg, null);
   assert.equal(result.meals.length, 1);
   assert.equal(result.today.totals.calories, 500);
-  assert.equal(result.recovery[0].expenditureKcal, 2000);
+  assert.equal(result.recovery[0].expenditureKcal, null, 'The fixture cycle ends after the request cutoff');
+  assert.equal(result.recovery[0].cycleMetricsScope, 'after-selected-period');
   assert.equal(result.conversation[0].hadPhoto, true);
   assert.deepEqual(result.connections, [{
     provider: 'strava', lastSuccess: now, lastAttempt: null,
@@ -242,7 +243,7 @@ test('model request uses server authentication, no storage, strict structured ou
     observed = { url: String(url), init: init! };
     return Response.json(completed(output()));
   };
-  const result = await generateCoach(request({ image: png }), context(), { apiKey: 'synthetic-key', fetch: stub });
+  const result = await generateCoach(request({ image: png, style: 'short' }), context(), { apiKey: 'synthetic-key', fetch: stub });
   assert.equal(result.output.drafts.length, 1);
   assert.equal(result.output.drafts[0].meal.calories, 500);
   assert.equal(observed!.url, 'https://api.openai.com/v1/responses');
@@ -259,6 +260,10 @@ test('model request uses server authentication, no storage, strict structured ou
   assert.equal(body.input[0].content[0].text.includes('synthetic-key'), false);
   assert.match(body.instructions, /untrusted DATA/);
   assert.match(body.instructions, /Drafts are NOT saved/);
+  assert.match(body.instructions, /Response length: short/);
+  assert.match(body.instructions, /including short replies and photo estimates/);
+  assert.match(body.instructions, /Draft estimate - review to save/);
+  assert.match(body.instructions, /Never describe a new draft as logged, saved, added, updated, corrected or recorded/);
 });
 
 test('invalid model configuration fails before any provider call', async () => {

@@ -1,0 +1,11 @@
+.dialog { max-width: 720px; }
+.manual { justify-self: start; }
+.form, .form fieldset, .review { display: grid; gap: 16px; }
+.form fieldset { border: 0; padding: 0; min-width: 0; }
+.choose { min-height: 64px; justify-content: center; border: 1px dashed #b29abd; background: #f7f1fa; }
+.preview { display: flex; align-items: flex-start; gap: 12px; }
+.preview img { max-height: 260px; max-width: min(100%, 420px); border-radius: 10px; object-fit: contain; }
+.retention { display: flex; gap: 14px; align-items: center; padding: 12px; background: #f7f2ec; border-radius: 10px; }
+.retention img { width: 90px; height: 90px; border-radius: 8px; object-fit: cover; }
+.reply { white-space: pre-wrap; font-size: 14px; line-height: 1.65; }
+.savedPhoto img { display: block; max-width: 100%; max-height: 300px; margin-top: 10px; object-fit: contain; border-radius: 8px; }

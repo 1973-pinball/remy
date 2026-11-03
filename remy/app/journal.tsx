@@ -15,9 +15,7 @@ import {
   Check,
   Pencil,
   Bookmark,
-  Download,
   ShieldCheck,
-  Flame,
   Leaf,
   Info,
   ChevronLeft,
@@ -38,7 +36,6 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -56,73 +53,40 @@ import {
 } from "./forms";
 import { TrainingView, ConnectionsView, SettingsView } from "./secondary-views";
 import { CoachView } from "./coach";
+import { LogFoodDialog } from "./log-food";
 import { HistoricalNutritionTable, HistoricalSummaryNotice } from "./historical-nutrition";
+import { NutritionTrends } from "./nutrition-trends";
+import { TodayOverview } from "./today-overview";
+import { HistoryExertion } from "./history-exertion";
+import { MealPhoto } from "./meal-photo";
+import { COACH_TARGETS } from "@/lib/coach-context";
+import { journalDestination, type JournalView, type JournalUtility } from "@/lib/journal-navigation";
+import layout from "./journal-layout.module.css";
+import { ownedDeviceDrafts, claimUnassignedDeviceDrafts } from "@/lib/device-drafts";
+import { nextMealSuggestion } from "@/lib/next-meal";
 import {
   summarize,
   ofKind,
-  weeklyTraining,
   localDate,
   addDays,
   round,
-  fuelingPlan,
   type Entry,
   type Meal,
   type Workout,
-  type Plan,
   type Day,
 } from "@/lib/domain";
 import { sampleEntries } from "@/lib/fixtures";
 import { insights, type InsightItem } from "@/lib/insights";
-type View =
-  | "Today"
-  | "Food"
-  | "Training"
-  | "Insights"
-  | "Chat"
-  | "Connections"
-  | "Settings";
+type View = JournalView;
 const nav = [
   ["Today", Sun],
-  ["Food", Utensils],
-  ["Training", Footprints],
-  ["Insights", Sparkles],
-  ["Chat", MessageCircle],
+  ["History", CalendarDays],
 ] as const;
 const value = (n: number | null | undefined, unit = "") =>
   n == null ? "—" : `${Math.round(n).toLocaleString()}${unit}`;
 const number = (n: number | null | undefined, unit = "") =>
   n == null ? "—" : `${round(n).toLocaleString()}${unit}`;
 
-export function ownedDeviceDrafts(drafts: any[], ownerId: string | null) {
-  return ownerId ? drafts.filter((draft) => draft?.ownerId === ownerId) : [];
-}
-
-export function claimUnassignedDeviceDrafts(drafts: any[], ownerId: string | null) {
-  if (!ownerId) throw new Error("Sign in before claiming drafts created on this device.");
-  return drafts.map((draft) => draft && draft.ownerId == null ? { ...draft, ownerId } : draft);
-}
-function Metric({
-  label,
-  amount,
-  note,
-  icon: Icon,
-}: {
-  label: string;
-  amount: string;
-  note: string;
-  icon: typeof Sun;
-}) {
-  return (
-    <article className="stat-card">
-      <div>
-        <span>{label}</span>
-        <Icon size={17} />
-      </div>
-      <strong>{amount}</strong>
-      <p>{note}</p>
-    </article>
-  );
-}
 function SourceLine({ entries }: { entries: Entry<any>[] }) {
   return (
     <div className="source-line">
@@ -148,6 +112,8 @@ function JournalContent() {
   const { setOpenMobile } = useSidebar();
   const refreshVersion = useRef(0);
   const [view, setView] = useState<View>("Today"),
+    [utility, setUtility] = useState<JournalUtility>(null),
+    [section, setSection] = useState<ReturnType<typeof journalDestination>["section"]>(null),
     [date, setDate] = useState(localDate()),
     [entries, setEntries] = useState<Entry[]>([]),
     [demo, setDemo] = useState(false),
@@ -163,17 +129,15 @@ function JournalContent() {
       "meal" | "day" | "import" | "run" | "plan" | "drafts" | null
     >(null),
     [editing, setEditing] = useState<Entry<any> | null>(null),
-    [drafts, setDrafts] = useState<any[]>([]),
-    [period, setPeriod] = useState(14);
+    [drafts, setDrafts] = useState<any[]>([]);
   const ownedDrafts = ownedDeviceDrafts(drafts, user?.id ?? null);
   const hasUnassignedDrafts = !!user && drafts.some((draft) => draft && draft.ownerId == null);
   const records = demo ? demoEntries : entries,
     summary = useMemo(() => summarize(records, date), [records, date]),
-    week = useMemo(() => weeklyTraining(records, date), [records, date]),
+    nextMeal = useMemo(() => nextMealSuggestion(summary), [summary]),
     brief = useMemo(() => insights(records, date), [records, date]),
     profile = summary.profile,
     workouts = ofKind<Workout>(records, "workout"),
-    plans = ofKind<Plan>(records, "plan").filter((p) => !p.data.cancelled),
     savedMeals = ofKind<Meal>(records, "savedMeal");
   const clearPrivateView = useCallback(() => {
     refreshVersion.current++;
@@ -181,6 +145,7 @@ function JournalContent() {
     setUser(null);
     setEditing(null);
     setModal(null);
+    setUtility(null);
     setLoading(false);
   }, []);
   const requireActiveSession = useCallback((response: Response) => {
@@ -211,20 +176,10 @@ function JournalContent() {
   }, [date, requireActiveSession]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    const v = url.searchParams.get("view");
-    if (
-      v &&
-      [
-        "Today",
-        "Food",
-        "Training",
-        "Insights",
-        "Chat",
-        "Connections",
-        "Settings",
-      ].includes(v)
-    )
-      setView(v as View);
+    const destination = journalDestination(url.searchParams.get("view"));
+    setView(destination.view);
+    setUtility(destination.utility ?? journalDestination(url.searchParams.get("utility")).utility);
+    setSection(destination.section);
     const day = url.searchParams.get("date");
     if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) setDate(day);
     setDemoEntries(sampleEntries(localDate()));
@@ -265,19 +220,24 @@ function JournalContent() {
     if (target)
       document.getElementById(target)?.scrollIntoView({ block: "center" });
   }, [view, date, records]);
-  const selectDate = (selectedDate: string, selectedView: View = view, recordId?: string) => {
+  const selectDate = (selectedDate: string, selectedView: string = view, recordId?: string) => {
+    const destination = journalDestination(selectedView);
     setDate(selectedDate);
-    setView(selectedView);
+    setView(destination.utility ? view : destination.view);
+    setUtility(destination.utility);
+    setSection(destination.section);
     setOpenMobile(false);
     const u = new URL(window.location.href);
-    u.searchParams.set("view", selectedView);
+    u.searchParams.set("view", destination.utility ? view : destination.view);
+    if (destination.utility) u.searchParams.set("utility", destination.utility);
+    else u.searchParams.delete("utility");
     u.searchParams.set("date", selectedDate);
     if (recordId) u.searchParams.set("record", recordId);
     else u.searchParams.delete("record");
     u.hash = recordId ? encodeURIComponent(recordId) : "";
     window.history.replaceState(null, "", u.pathname + u.search + u.hash);
   };
-  const go = (v: View) => selectDate(date, v);
+  const go = (v: string) => selectDate(date, v);
   const recordDraft = (r: SaveRecord) => {
     const draft = {
       ...r,
@@ -369,15 +329,7 @@ function JournalContent() {
       data: day,
     });
   };
-  const meals = summary.meals,
-    cycle = [...summary.expenditure].sort((a, b) =>
-      b.start.localeCompare(a.start),
-    )[0],
-    next =
-      summary.plans[0] ??
-      plans
-        .filter((p) => p.localDate! > date && !p.data.completedWorkoutId)
-        .sort((a, b) => a.localDate!.localeCompare(b.localDate!))[0];
+  const meals = summary.meals;
   function mealList(list: Entry<Meal>[]) {
     return list.length ? (
       <div className="meal-list">
@@ -403,6 +355,7 @@ function JournalContent() {
               {m.data.workoutId && (
                 <small>Run fuel · included once in daily intake</small>
               )}
+              {m.data.photoId && <MealPhoto entryId={m.id} title={m.data.title} />}
             </div>
             <div className="meal-end">
               <strong>
@@ -425,7 +378,7 @@ function JournalContent() {
                     void save({
                       kind: "savedMeal",
                       localDate: null,
-                      data: m.data,
+                      data: { ...m.data, photoId: undefined },
                     }).catch((e) => toast.error(e.message))
                   }
                 >
@@ -471,7 +424,7 @@ function JournalContent() {
       <section className="card etl-card">
         <div className="section-heading">
           <h2>
-            <Leaf size={18} /> Eat to Live, today
+            <Leaf size={18} /> Eat to Live · {date}
           </h2>
           <span>{summary.nutritionSource === "historical-summary" ? "Historical daily estimate · coverage unknown" : "From individual meals"}</span>
         </div>
@@ -483,6 +436,7 @@ function JournalContent() {
                 {number(summary.etl[key]?.value)}
                 <small>{unit}</small>
               </strong>
+              {key in COACH_TARGETS && <small className="coverage-note">Usual range {COACH_TARGETS[key as keyof typeof COACH_TARGETS].join("–")} {unit}</small>}
               {summary.nutritionSource !== "historical-summary" && summary.etl[key] &&
                 !summary.etl[key].complete &&
                 summary.etl[key].known > 0 && (
@@ -496,7 +450,7 @@ function JournalContent() {
         <p className="microcopy">
           {summary.nutritionSource === "historical-summary"
             ? "A dash means the source did not provide a value. These are historical daily estimates; meal coverage is unknown."
-            : "A dash means unknown. Partial sums show their coverage. These contributions describe your food; they are not automatic quotas."}
+            : "A dash means unknown. Partial sums show their coverage. Your usual ranges are preferences for maintenance and training, not required quotas or restrictive caps."}
         </p>
         <details>
           <summary>Flex and run fuel</summary>
@@ -560,7 +514,7 @@ function JournalContent() {
                   onClick={() => go(label)}
                 >
                   <Icon />
-                  <span>{label === "Food" ? "Food & ETL" : label === "Chat" ? "Coach" : label}</span>
+                  <span>{label}</span>
                   {view === label && <span className="nav-dot" />}
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -577,24 +531,14 @@ function JournalContent() {
             </p>
             <span>{profile.raceDate ?? "Your marathon starts here."}</span>
           </div>
-          <SidebarMenu>
-            {(
-              [
-                ["Connections", Plug],
-                ["Settings", Settings],
-              ] as const
-            ).map(([label, Icon]) => (
-              <SidebarMenuItem key={label}>
-                <SidebarMenuButton
-                  isActive={view === label}
-                  onClick={() => go(label)}
-                >
-                  <Icon />
-                  {label === "Settings" ? "Your profile" : label}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
+          <details className={layout.utility}>
+            <summary><Settings size={17} /> Settings</summary>
+            <div className={layout.utilityMenu}>
+              <button onClick={() => go("Connections")}><Plug size={15} /> Connections</button>
+              <button onClick={() => go("Settings")}><Settings size={15} /> Profile & goals</button>
+              <button onClick={() => demo ? toast("Exit sample mode to import your history.") : setModal("import")}><Upload size={15} /> Import history</button>
+            </div>
+          </details>
           <a className="privacy-link" href="/privacy">Privacy policy</a>
           <div className="account">
             <span>{(profile.name || "R")[0]}</span>
@@ -644,36 +588,8 @@ function JournalContent() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">{dateTitle.toUpperCase()}</p>
-              <h1>
-                {view === "Today"
-                  ? "Fuel the work you’re putting in."
-                  : view === "Food"
-                    ? "Your food. The full picture."
-                    : view === "Training"
-                      ? "The running context."
-                      : view === "Insights"
-                        ? "Make the connection."
-                        : view === "Chat"
-                          ? "Eat well. Run strong."
-                          : view === "Connections"
-                            ? "Bring it all together."
-                            : "Make Remy Mux yours."}
-              </h1>
-              <p>
-                {view === "Today"
-                  ? "Your Eat to Live journal, with your running in mind."
-                  : view === "Food"
-                    ? "Meals, corrections, and the history behind your nutrition."
-                    : view === "Training"
-                      ? "Just the headlines that help you fuel your training."
-                      : view === "Insights"
-                        ? "Practical nutrition ideas, grounded in your records."
-                        : view === "Connections"
-                          ? "Each source connects independently. Your journal keeps working."
-                          : view === "Chat"
-                            ? "Your Eat to Live sidekick, with running and recovery in view."
-                            : "Your goals and preferences shape the context."}
-              </p>
+              <h1>{view === "Today" ? "Food for the work ahead." : "Your history, in context."}</h1>
+              <p>{view === "Today" ? "Your next meal, daily totals, and running — together." : "Food, ETL preferences, running and recovery over time."}</p>
             </div>
             <button
               className="primary-button"
@@ -683,7 +599,7 @@ function JournalContent() {
               }}
             >
               <Plus size={18} />
-              Log food
+              Log food or photo
             </button>
           </div>
           {demo ? (
@@ -699,16 +615,7 @@ function JournalContent() {
                 Set up sign-in
               </a>
             </div>
-          ) : (
-            <div className="notice">
-              <span className="pill">
-                {summary.day.complete ? "LOG COMPLETE" : "LOG IN PROGRESS"}
-              </span>
-              {loading
-                ? "Refreshing your records…"
-                : `${meals.length} food entries · ${summary.day.complete ? "you marked logging complete" : "unlogged meals are unknown"}`}
-            </div>
-          )}
+          ) : loading ? <p className="microcopy">Refreshing your records…</p> : null}
           <div className="date-toolbar">
             <div>
               <button
@@ -736,7 +643,7 @@ function JournalContent() {
                 Today
               </button>
             </div>
-            {["Today", "Food"].includes(view) && (
+            {view === "History" && (
               <button
                 className="text-button"
                 onClick={() => {
@@ -753,533 +660,53 @@ function JournalContent() {
               </button>
             )}
           </div>
-          {view === "Today" && (
-            <>
-              {summary.historicalSummary && summary.nutritionSource === "historical-summary" && (
-                <HistoricalSummaryNotice entry={summary.historicalSummary} active />
-              )}
-              <section className="focus-panel">
-                <div className="focus-content">
-                  <div className="eyebrow">
-                    <Sparkles size={16} /> TODAY’S FOCUS
-                  </div>
-                  <h2>{brief.headline.title}</h2>
-                  <p>{brief.headline.body}</p>
-                  <button
-                    className="dark-button"
-                    onClick={() =>
-                      go(profile.confirmed ? "Insights" : "Settings")
-                    }
-                  >
-                    {profile.confirmed
-                      ? "See the reasoning"
-                      : "Confirm your profile"}
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-                <div className="focus-aside">
-                  <span className="eyebrow">{summary.nutritionSource === "historical-summary" ? "HISTORICAL CARBOHYDRATE ESTIMATE" : "CARBOHYDRATES LOGGED"}</span>
-                  <strong>
-                    {value(summary.totals.carbs)}
-                    <span>g</span>
-                  </strong>
-                  {summary.nutritionSource !== "historical-summary" && summary.nutrientCoverage.carbs.known > 0 &&
-                    !summary.nutrientCoverage.carbs.complete && (
-                      <small>
-                        Known for {summary.nutrientCoverage.carbs.known}/
-                        {meals.length} meals
-                      </small>
-                    )}
-                  {summary.carbs.range ? (
-                    <>
-                      <p>
-                        Contextual reference
-                        <br />
-                        <b>
-                          {summary.carbs.range[0]}–{summary.carbs.range[1]} g
-                          today
-                        </b>
-                      </p>
-                      <Progress
-                        aria-label="Carbohydrates against lower reference"
-                        value={Math.min(
-                          100,
-                          ((summary.totals.carbs ?? 0) /
-                            summary.carbs.range[0]) *
-                            100,
-                        )}
-                      />
-                    </>
-                  ) : (
-                    <p>
-                      Confirm your body weight
-                      <br />
-                      to personalize the reference.
-                    </p>
-                  )}
-                  <small>{summary.nutritionSource === "historical-summary" ? "Source daily estimate · food coverage unknown" : "Broad guidance · adjust to tolerance"}</small>
-                </div>
-              </section>
-              <div className="section-heading">
-                <h2>Food meets training</h2>
-                <span>Headline numbers, shared context</span>
+          {view === "Today" ? <>
+            <section className={layout.nextMeal} aria-labelledby="next-meal-heading">
+              <div><p className="eyebrow"><Sparkles size={14} /> WHAT TO EAT NEXT</p>
+                <h2 id="next-meal-heading">{nextMeal.title}</h2>
+                <p>{nextMeal.body}</p>
+                <span>{nextMeal.note}</span>
               </div>
-              <div className="stat-grid">
-                <Metric
-                  label={summary.nutritionSource === "historical-summary" ? "Historical daily intake" : "Intake logged"}
-                  amount={value(summary.totals.calories, " kcal")}
-                  note={summary.nutritionSource === "historical-summary" ? "Source daily estimate · food coverage unknown" : `${summary.day.complete ? "Complete" : "Partial"} log · ${summary.nutrientCoverage.calories.known}/${meals.length} meals with kcal · target ${summary.target.toLocaleString()}`}
-                  icon={Utensils}
-                />
-                <Metric
-                  label="WHOOP estimate"
-                  amount={value(cycle?.kcal, " kcal")}
-                  note={
-                    cycle
-                      ? "Latest overlapping cycle · estimated"
-                      : "No WHOOP cycle recorded"
-                  }
-                  icon={Flame}
-                />
-                <Metric
-                  label="Running this week"
-                  amount={
-                    week.count > week.missingDistance
-                      ? number(week.km / 1.609344, " mi")
-                      : "—"
-                  }
-                  note={
-                    week.count
-                      ? `${week.count} runs · ${week.missingDistance ? `${week.missingDistance} missing distance` : `${week.days} running days`}`
-                      : "No completed runs recorded"
-                  }
-                  icon={Footprints}
-                />
-                <Metric
-                  label="Next session"
-                  amount={
-                    next
-                      ? number(
-                          next.data.durationSec == null
-                            ? null
-                            : next.data.durationSec / 60,
-                          " min",
-                        )
-                      : "—"
-                  }
-                  note={
-                    next
-                      ? `${next.localDate} · ${next.data.title}`
-                      : "Connect or import your Runna calendar"
-                  }
-                  icon={CalendarDays}
-                />
+              <button className="quiet-button" onClick={() => { setSection("coach"); requestAnimationFrame(() => document.getElementById("ask-remy")?.scrollIntoView({behavior:"smooth",block:"start"})); }}>Ask Remy <MessageCircle size={16}/></button>
+            </section>
+            <TodayOverview records={records} date={date} onAdjust={() => setModal("day")} onConnections={() => go("Connections")} />
+            <details id="ask-remy" className={`card ${layout.disclosure}`} open={section === "coach"} onToggle={e => { if(!e.currentTarget.open && section === "coach") setSection(null); }}>
+              <summary onClick={e => { e.preventDefault(); setSection(section === "coach" ? null : "coach"); }}><span><MessageCircle size={18}/> Ask Remy <small>Personal guidance, photos & meal review</small></span></summary>
+              <CoachView compact key={`${user?.id ?? "signed-out"}:${date}:${demo}`} records={records} date={date} demo={demo} authenticated={!!user} onChanged={refresh}/>
+            </details>
+            {(meals.length > 0 || summary.nutritionSource === "historical-summary") && <details className={`card ${layout.disclosure}`}>
+              <summary><span><Utensils size={18}/> Food recorded <small>{meals.length ? `${meals.length} meals` : "Historical daily estimate"}</small></span></summary>
+              {summary.historicalSummary && <HistoricalSummaryNotice entry={summary.historicalSummary} active={summary.nutritionSource === "historical-summary"}/>}
+              {mealList(meals)}
+              <div className="completion-row"><button className="quiet-button" onClick={() => void saveDay({...summary.day, complete:!summary.day.complete}).catch(e => toast.error(e.message))}><Check size={15}/>{summary.day.complete ? "Reopen food log" : "Mark food log complete"}</button><button className="text-button" onClick={() => go("Food")}>Food history & ETL</button></div>
+            </details>}
+          </> : <>
+            <NutritionTrends records={records} selectedDate={date} onOpenDate={historyDate => selectDate(historyDate,"Food")}/>
+            <HistoryExertion records={records} selectedDate={date}/>
+            {etlPanel()}
+            <details className={`card ${layout.disclosure}`}>
+              <summary><span><CalendarDays size={18}/> Imported source summaries <small>Original daily estimates</small></span></summary>
+              <HistoricalNutritionTable records={records} selectedDate={date} onOpenDate={historyDate => {selectDate(historyDate,"Food"); requestAnimationFrame(() => document.getElementById("food-journal")?.scrollIntoView({behavior:"smooth",block:"start"})); }}/>
+            </details>
+            <details id="food-journal" className={`card ${layout.disclosure}`} open={section === "food"} onToggle={e => { if(!e.currentTarget.open && section === "food")setSection(null); }}>
+              <summary onClick={e => {e.preventDefault();setSection(section === "food" ? null : "food");}}><span><Utensils size={18}/> Food journal <small>{date} · {meals.length} meals</small></span></summary>
+              {summary.historicalSummary && <HistoricalSummaryNotice entry={summary.historicalSummary} active={summary.nutritionSource === "historical-summary"}/>}{mealList(meals)}
+              <div className="completion-row"><button className="quiet-button" onClick={() => void saveDay({...summary.day,complete:!summary.day.complete}).catch(e=>toast.error(e.message))}><Check size={15}/>{summary.day.complete ? "Reopen food log" : "Mark food log complete"}</button><button className="text-button" onClick={() => setModal("day")}>Daily target</button></div>
+              {savedMeals.length > 0 && <div className={layout.savedMeals}><h3>Reusable meals</h3><div className="saved-meals">{savedMeals.map(m => <button className="quiet-button" key={m.id} onClick={() => {setEditing({...m,id:crypto.randomUUID(),kind:"meal",localDate:date,revision:0,data:{...m.data,photoId:undefined,mealTime:null,messageTime:null,workoutId:null}});setModal("meal");}}><Plus size={15}/>{m.data.title}</button>)}</div></div>}
+            </details>
+            <details className={`card ${layout.disclosure}`} open={section === "training"} onToggle={e=>{if(!e.currentTarget.open&&section === "training")setSection(null);}}>
+              <summary onClick={e=>{e.preventDefault();setSection(section === "training" ? null : "training");}}><span><Footprints size={18}/> Running & plans <small>Browse or add activity</small></span></summary>
+              <TrainingView entries={records} date={date} onEdit={(entry,planned)=>{setEditing(entry??null);setModal(planned?"plan":"run");}} onSave={save}/>
+            </details>
+            <details className={`card ${layout.disclosure}`} open={section === "insights"} onToggle={e=>{if(!e.currentTarget.open&&section === "insights")setSection(null);}}>
+              <summary onClick={e=>{e.preventDefault();setSection(section === "insights" ? null : "insights");}}><span><Sparkles size={18}/> More context <small>Fueling, observations & sources</small></span></summary>
+              <div className={layout.historyDetail}><h3>{brief.headline.title}</h3><p>{brief.headline.body}</p>{citations(brief.headline)}
+                {[...brief.actions,...brief.observations].map(item=><article key={item.id}><h3>{item.title}</h3><p>{item.body}</p>{citations(item)}{item.references.map(reference=><a className="reference-link" key={reference.url} href={reference.url} target="_blank" rel="noreferrer">{reference.title} ↗</a>)}</article>)}
+                <article><h3>Carbohydrate context</h3><p>{summary.carbs.reason}</p><p>{summary.carbs.range ? `${summary.carbs.range[0]}–${summary.carbs.range[1]} g/day is a broad training reference, not a required quota.` : "Confirm your current weight in your profile to personalize gram references."}</p></article>
+                <details><summary>Coverage and limitations</summary>{brief.limitations.map(note=><p key={note}>{note}</p>)}<SourceLine entries={records.filter(e=>summary.inputs.some(i=>i.id===e.id))}/></details>
               </div>
-              <div className="bottom-grid">
-                <section className="card">
-                  <div className="section-heading">
-                    <h2>On your plate</h2>
-                    <button className="text-button" onClick={() => go("Food")}>
-                      Food journal
-                    </button>
-                  </div>
-                  {mealList(meals)}
-                  <div className="calorie-detail">
-                    <span>
-                      {summary.baseline.toLocaleString()} baseline{" "}
-                      {summary.adjustment >= 0 ? "+" : ""}
-                      {summary.adjustment} adjustment
-                    </span>
-                    <button
-                      className="text-button"
-                      onClick={() => setModal("day")}
-                    >
-                      Adjust
-                    </button>
-                  </div>
-                </section>
-                <section className="card next-context">
-                  <div className="section-heading">
-                    <h2>Plan for what’s next</h2>
-                    <Footprints size={18} />
-                  </div>
-                  {next ? (
-                    <>
-                      <span className="pill">
-                        {next.localDate === addDays(date, 1)
-                          ? "TOMORROW"
-                          : next.localDate}
-                      </span>
-                      <h3>{next.data.title}</h3>
-                      <p>
-                        {number(
-                          next.data.distanceMeters == null
-                            ? null
-                            : next.data.distanceMeters / 1609.344,
-                          " mi",
-                        )}{" "}
-                        ·{" "}
-                        {number(
-                          next.data.durationSec == null
-                            ? null
-                            : next.data.durationSec / 60,
-                          " min",
-                        )}{" "}
-                        · {next.data.intensity}
-                      </p>
-                      <div className="insight-note">
-                        <Leaf size={18} />
-                        <p>
-                          Combine a familiar carbohydrate source with beans or
-                          whole soy and vegetables. Choose fiber amounts you
-                          tolerate near a run.
-                        </p>
-                      </div>
-                      <button
-                        className="text-button"
-                        onClick={() => go("Insights")}
-                      >
-                        Consider your fueling
-                      </button>
-                    </>
-                  ) : (
-                    <div className="next-run">
-                      <h3>Your next run belongs here.</h3>
-                      <p>
-                        Runna’s calendar helps put your food choices in context.
-                        Available details are shown as supplied.
-                      </p>
-                      <button
-                        className="text-button"
-                        onClick={() => go("Connections")}
-                      >
-                        Connect your plan
-                      </button>
-                    </div>
-                  )}
-                </section>
-              </div>
-              {etlPanel()}
-              <SourceLine
-                entries={[
-                  ...meals,
-                  ...summary.workouts,
-                  ...summary.recovery,
-                  ...summary.plans,
-                  ...(summary.nutritionSource === "historical-summary" && summary.historicalSummary ? [summary.historicalSummary] : []),
-                ]}
-              />
-            </>
-          )}
-          {view === "Food" && (
-            <>
-              {summary.historicalSummary && (
-                <HistoricalSummaryNotice entry={summary.historicalSummary} active={summary.nutritionSource === "historical-summary"} />
-              )}
-              <div className="food-summary card">
-                {(
-                  ["calories", "protein", "carbs", "fat", "fiber"] as const
-                ).map((k) => (
-                  <div key={k}>
-                    <span>{k === "calories" ? summary.nutritionSource === "historical-summary" ? "Historical daily intake" : "Intake logged" : k}</span>
-                    <strong>
-                      {number(
-                        summary.totals[k],
-                        k === "calories" ? " kcal" : " g",
-                      )}
-                    </strong>
-                    {summary.nutritionSource === "historical-summary" ? (
-                      <small className="coverage-note">Source estimate</small>
-                    ) : !summary.nutrientCoverage[k].complete && (
-                      <small className="coverage-note">
-                        {summary.nutrientCoverage[k].known}/{meals.length} meals
-                        have values
-                      </small>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <section className="card">
-                <div className="section-heading">
-                  <h2>{dateTitle}</h2>
-                  {summary.nutritionSource === "historical-summary" ? <span>Food coverage unknown</span> : <button
-                    className="quiet-button"
-                    onClick={() =>
-                      void saveDay({
-                        ...summary.day,
-                        complete: !summary.day.complete,
-                      }).catch((e) => toast.error(e.message))
-                    }
-                  >
-                    <Check size={15} />
-                    {summary.day.complete
-                      ? "Reopen logging"
-                      : "Finished logging"}
-                  </button>}
-                </div>
-                {mealList(meals)}
-                <div className="calorie-detail">
-                  <span>
-                    Target = {summary.baseline} baseline{" "}
-                    {summary.adjustment >= 0 ? "+" : ""}
-                    {summary.adjustment} manual adjustment
-                  </span>
-                  <button
-                    className="text-button"
-                    onClick={() => setModal("day")}
-                  >
-                    Edit target
-                  </button>
-                </div>
-              </section>
-              {etlPanel()}
-              <HistoricalNutritionTable
-                records={records}
-                selectedDate={date}
-                onOpenDate={(historicalDate) => {
-                  selectDate(historicalDate, "Food");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              />
-              {savedMeals.length > 0 && (
-                <section className="card">
-                  <div className="section-heading">
-                    <h2>Your reusable meals</h2>
-                    <Bookmark size={18} />
-                  </div>
-                  <div className="saved-meals">
-                    {savedMeals.map((m) => (
-                      <button
-                        className="quiet-button"
-                        key={m.id}
-                        onClick={() => {
-                          setEditing({
-                            ...m,
-                            id: crypto.randomUUID(),
-                            kind: "meal",
-                            localDate: date,
-                            revision: 0,
-                            data: {
-                              ...m.data,
-                              mealTime: null,
-                              messageTime: null,
-                              workoutId: null,
-                            },
-                          });
-                          setModal("meal");
-                        }}
-                      >
-                        <Plus size={15} />
-                        {m.data.title}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-              <section className="card">
-                <h2>About your REMY history</h2>
-                <p className="muted">
-                  Imports retain source identities and revisions. Review photos,
-                  uncertain portions, and corrections against the original
-                  conversation. Historical daily totals are retained as summaries and used only on dates without meal entries.
-                </p>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    demo
-                      ? toast("Exit sample mode to import your history.")
-                      : setModal("import")
-                  }
-                >
-                  <Upload size={16} /> Import selected history
-                </button>
-              </section>
-            </>
-          )}
-          {view === "Training" && (
-            <TrainingView
-              entries={records}
-              date={date}
-              onEdit={(entry, planned) => {
-                setEditing(entry ?? null);
-                setModal(planned ? "plan" : "run");
-              }}
-              onSave={save}
-            />
-          )}
-          {view === "Connections" && (
-            <ConnectionsView
-              demo={demo}
-              onImport={() =>
-                demo
-                  ? toast("Exit sample mode to import your history.")
-                  : setModal("import")
-              }
-              onRefresh={refresh}
-            />
-          )}
-          {view === "Settings" && (
-            <SettingsView
-              entries={records}
-              demo={demo}
-              onSave={save}
-              onRefresh={refresh}
-            />
-          )}
-          {view === "Insights" && (
-            <>
-              <section className="card insight-lead">
-                <span className="eyebrow">OBSERVATION · {summary.version}</span>
-                <h2>{brief.headline.title}</h2>
-                <p>{brief.headline.body}</p>
-                {citations(brief.headline)}
-              </section>
-              <div className="insight-grid">
-                {brief.actions.map((item, i) => (
-                  <section className="card action-card" key={item.id}>
-                    <span className="action-number">0{i + 1}</span>
-                    <span className="eyebrow">PRACTICAL NEXT STEP</span>
-                    <h2>{item.title}</h2>
-                    <p>{item.body}</p>
-                    {citations(item)}
-                  </section>
-                ))}
-              </div>
-              <section className="card">
-                <div className="section-heading">
-                  <h2>Carbohydrate context</h2>
-                  <span>Daily intake and run fueling are separate</span>
-                </div>
-                <p>{summary.carbs.reason}</p>
-                <p>
-                  {summary.carbs.range
-                    ? `${summary.carbs.range[0]}–${summary.carbs.range[1]} g/day (${summary.carbs.reference[0]}–${summary.carbs.reference[1]} g/kg reference). Logged: ${number(summary.carbs.gramsPerKg, " g/kg")}.`
-                    : "A personalized grams-per-day range needs confirmed body weight."}
-                </p>
-                <p className="muted">
-                  Published reference bands guide interpretation. They are not
-                  automatic quotas or a diagnosis of your energy needs.
-                </p>
-                {next && (
-                  <div className="fueling-grid">
-                    {(() => {
-                      const f = fuelingPlan(next.data, profile);
-                      return (
-                        <>
-                          <div>
-                            <h3>Before</h3>
-                            <p>
-                              {f.before
-                                ? `${value(f.before[0])}–${value(f.before[1])} g over the 1–4 hours before longer exercise is a broad reference.`
-                                : !profile.confirmed || !profile.weightKg
-                                  ? "Confirm your weight to personalize a pre-run reference for longer exercise."
-                                  : "A dedicated pre-run carbohydrate range is used for sessions longer than an hour."}
-                            </p>
-                          </div>
-                          <div>
-                            <h3>During</h3>
-                            <p>
-                              {f.during
-                                ? `${f.during[0]}–${f.during[1]} g/hour is a duration-based reference. ${f.note}`
-                                : "Duration is needed for specific fueling guidance. Shorter runs may not require extra carbohydrate."}
-                            </p>
-                          </div>
-                          <div>
-                            <h3>After</h3>
-                            <p>{f.after}</p>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-                <a
-                  className="text-button"
-                  href="https://www.dietitians.ca/DietitiansOfCanada/media/Documents/Resources/noap-position-paper.pdf"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Sports nutrition reference
-                </a>
-              </section>
-              <section className="card">
-                <div className="section-heading">
-                  <h2>Across your recent records</h2>
-                  <div className="period-buttons">
-                    {[7, 14, 28].map((p) => (
-                      <button
-                        className={period === p ? "active" : ""}
-                        key={p}
-                        onClick={() => setPeriod(p)}
-                      >
-                        {p} days
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {(() => {
-                  const days = Array.from({ length: period }, (_, i) =>
-                    summarize(records, addDays(date, -i)),
-                  );
-                  return (
-                    <div className="period-summary">
-                      <p>
-                        <b>
-                          {days.filter((d) => d.day.complete && d.nutritionSource !== "historical-summary").length}/{period}
-                        </b>{" "}
-                        days marked complete
-                      </p>
-                      <p>
-                        <b>
-                          {days.filter((d) => d.meals.length).length}/{period}
-                        </b>{" "}
-                        days with food entries
-                      </p>
-                      {days.some((day) => day.nutritionSource === "historical-summary") && (
-                        <p>
-                          <b>{days.filter((day) => day.nutritionSource === "historical-summary").length}/{period}</b>{" "}
-                          days represented by historical daily summaries · coverage unknown
-                        </p>
-                      )}
-                      <p className="muted">
-                        Incomplete days are excluded from complete-day
-                        comparisons. An association between food and a difficult
-                        run would not establish a cause.
-                      </p>
-                    </div>
-                  );
-                })()}
-              </section>
-              <section className="card">
-                <h2>What limits this view</h2>
-                <ul className="limitations">
-                  {summary.limitations.map((l) => (
-                    <li key={l}>{l}</li>
-                  ))}
-                </ul>
-                <p className="muted">
-                  WHOOP cycle boundaries may differ from the food day. Wearable
-                  expenditure is an estimate. Remy Mux does not diagnose low energy
-                  availability or REDs.
-                </p>
-                <SourceLine
-                  entries={records.filter((e) =>
-                    summary.inputs.some((i) => i.id === e.id),
-                  )}
-                />
-              </section>
-            </>
-          )}
-          {view === "Chat" && (
-            <CoachView
-              key={`${user?.id ?? "signed-out"}:${date}:${demo}`}
-              records={records}
-              date={date}
-              demo={demo}
-              authenticated={!!user}
-              onChanged={refresh}
-            />
-          )}
+            </details>
+          </>}
           <footer className="page-footer">
             <span>Built around your records. Always open to correction.</span>
             <span>REMY MUX / NUTRITION IN CONTEXT</span>
@@ -1287,7 +714,13 @@ function JournalContent() {
         </div>
       </main>
       <Toaster position="bottom-right" />
-      {modal === "meal" && (
+      {utility && <Dialog open onOpenChange={open=>{if(!open)selectDate(date,view);}}>
+        <DialogContent className={layout.utilityDialog}><DialogHeader><DialogTitle>{utility === "Connections" ? "Connections" : "Your profile & goals"}</DialogTitle><DialogDescription>{utility === "Connections" ? "Manage your running and recovery sources." : "Preferences that shape your food and training context."}</DialogDescription></DialogHeader>
+          {utility === "Connections" ? <ConnectionsView demo={demo} onImport={()=>{if(demo)toast("Exit sample mode to import your history.");else{setUtility(null);setModal("import");}}} onRefresh={refresh}/> : <SettingsView entries={records} demo={demo} onSave={save} onRefresh={refresh}/>}
+        </DialogContent>
+      </Dialog>}
+
+      {modal === "meal" && editing && (
         <MealDialog
           entry={editing as Entry<Meal> | null}
           date={date}
@@ -1297,6 +730,7 @@ function JournalContent() {
           onClose={() => setModal(null)}
         />
       )}
+      {modal === "meal" && !editing && <LogFoodDialog key={`${user?.id ?? "guest"}:${date}:${demo}`} date={date} zone={profile.timezone} records={records} workouts={workouts} demo={demo} authenticated={!!user} onSave={save} onChanged={refresh} onClose={() => setModal(null)} />}
       {modal === "day" && (
         <DayDialog
           day={summary.day}

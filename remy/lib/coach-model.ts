@@ -6,6 +6,7 @@ import {
 } from './domain';
 import { dateSchema, mealSchema, etlSchema } from './validation';
 import { coachProgress, COACH_PRINCIPLES, COACH_REFERENCES } from './coach-context';
+import { recoveryContext, recoveryForDate } from './recovery-context';
 import type { CoachImage, CoachMessage, CoachProposal, CoachStyle } from './coach-types';
 
 export const COACH_VERSION = 'remy-coach-1';
@@ -113,7 +114,7 @@ export function buildCoachContext(entries: Entry[], date: string, now = new Date
       weightKg: ofKind<Day>(entries, 'day').find(e => e.localDate === day)?.data.weightKg ?? null,
     };
   });
-  const week = weeklyTraining(entries, date);
+  const week = weeklyTraining(entries.filter(e => e.kind !== 'workout' || !!e.localDate && e.localDate <= date), date);
   return {
     version: COACH_VERSION, selectedDate: date, generatedAt: now, timezone: profile.timezone,
     profile: {
@@ -126,6 +127,7 @@ export function buildCoachContext(entries: Entry[], date: string, now = new Date
       ...coachProgress(entries, date), baseline: summary.baseline, manualAdjustment: summary.adjustment,
       planningCalories: summary.target, limitations: summary.limitations,
       carbohydrateReference: { ...summary.carbs, provisionalWorkloadBand: summary.band },
+      recovery: recoveryForDate(entries, date, profile.timezone, now),
     },
     meals: meals.slice(0, 60).map(e => ({
       id: e.id, revision: e.revision, date: e.localDate, title: clean(e.data.title, 300),
@@ -134,19 +136,14 @@ export function buildCoachContext(entries: Entry[], date: string, now = new Date
       confidence: e.data.confidence, notes: clean(e.data.notes, 1000),
     })),
     running: {
-      week: { start: week.start, end: week.end, km: week.km, count: week.count, missingDistance: week.missingDistance },
+      week: { start: week.start, end: week.end, through: date, km: week.km, count: week.count, missingDistance: week.missingDistance },
       recent: runs.slice(0, 80).map(e => ({
         id: e.id, date: e.localDate, source: e.source, start: e.data.start,
         durationSec: e.data.durationSec, distanceMeters: e.data.distanceMeters,
         avgHr: e.data.avgHr, perceivedEffort: e.data.perceivedEffort ?? null, soreness: e.data.soreness ?? null,
       })),
     },
-    recovery: recoveries.slice(0, 28).map(e => ({
-      start: e.data.start, end: e.data.end, scoreState: e.data.scoreState,
-      expenditureKcal: e.data.scoreState === 'SCORED' && e.data.kilojoules != null ? Math.round(e.data.kilojoules / 4.184) : null,
-      recovery: e.data.recovery, hrv: e.data.hrv, restingHr: e.data.restingHr,
-      sleepHours: e.data.sleepHours, strain: e.data.strain,
-    })),
+    recovery: recoveries.slice(0, 28).map(e => recoveryContext(e, date, profile.timezone, now)),
     plans: plans.slice(0, 20).map(e => ({
       date: e.localDate, start: e.data.start, title: clean(e.data.title, 300),
       durationSec: e.data.durationSec, distanceMeters: e.data.distanceMeters,
@@ -185,7 +182,7 @@ export function coachInstructions(style: CoachStyle) {
 The primary goal is weight maintenance, muscle preservation/building and training recovery. Do not prescribe aggressive weight loss or promise spot reduction of midsection fat.
 ${COACH_PRINCIPLES}
 Speak directly, calmly, practically and encouragingly. No food shame. No invented micronutrients, exact device-based energy balance, or diagnoses.
-Use the supplied deterministic totals and coverage as the authoritative saved ledger. Never add earlier chat estimates to those totals. Drafts are NOT saved and must NOT be included in saved totals. Explicitly call them estimates awaiting review.
+Use the supplied deterministic totals and coverage as the authoritative saved ledger. Never add earlier chat estimates to those totals. Drafts are NOT saved and must NOT be included in saved totals. When returning any draft, including short replies and photo estimates, explicitly say "Draft estimate - review to save" or "Correction draft - review to save" in the reply. Never describe a new draft as logged, saved, added, updated, corrected or recorded: confirmation has not happened. A request to "log this" still creates only a draft. Refer to a meal as already saved only when the supplied ledger proves it.
 Every meal reported as eaten should be represented by a reviewable draft, unless the entry already exists or the report is too ambiguous. A suggested future meal is not an eaten meal. Photos provide rough estimates, not measured weights. Ask a focused question when a food or portion cannot reasonably be identified. Note oil, dressing, portion and preparation assumptions.
 Corrections update the original meal: use action "update" and its exact existing id from context, preserving unchanged information. Never duplicate corrections or subtract invented ingredient amounts. If the intended meal is unclear, ask which one and return no draft. Do not recreate a dismissed draft just because it appears in history.
 For additions targetId must be null. For updates it must identify a provided existing meal. Return up to 6 drafts; ask to continue if more are needed. Missing nutrient or category values are null, not zero. Use zeros only when supported by the actual food. ETL amounts are ready-to-eat/cooked weights for beans, soy and starch; explain assumptions. Treat soy separately from other beans; flax is included within nuts/seeds, not extra mass. Count run-fuel energy and macros exactly once in totals and separately from discretionary flex calories.

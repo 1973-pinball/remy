@@ -1,0 +1,5 @@
+.compact { display: block; }
+.compact :global(.coach-messages) { min-height: 0; max-height: 360px; }
+.compact :global(.chat-mode) { align-items: flex-start; }
+.compact :global(.chat-mode p) { margin-bottom: 0; }
+.compact :global(.coach-proposals) { margin-top: 12px; }

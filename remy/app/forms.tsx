@@ -538,6 +538,7 @@ export function MealDialog({
           notes: String(f.get("notes")),
           confidence,
           workoutId: run === "none" ? null : run,
+          ...(meal?.photoId ? { photoId: meal.photoId } : {}),
           calories: num(f.get("calories")),
           carbs: num(f.get("carbs")),
           protein: num(f.get("protein")),

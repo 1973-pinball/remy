@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ownedDeviceDrafts, claimUnassignedDeviceDrafts } from '../app/journal';
+import { ownedDeviceDrafts, claimUnassignedDeviceDrafts } from '../lib/device-drafts';
 
 const drafts = [
   { id: 'mine', ownerId: 'owner-a', data: { title: 'Synthetic owner A draft' } },

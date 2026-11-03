@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { ofKind, profileOf, summarize, type Entry, type Meal } from './domain';
 import { dateSchema, mealSchema } from './validation';
 import { assertJournalDate } from './journal-date';
-import { buildCoachContext, coachRequestDigest, type CoachRequest, type generateCoach } from './coach-model';
+import { buildCoachContext, coachRequestDigest, coachRequestSchema, validateCoachImage, type CoachRequest, type generateCoach } from './coach-model';
 import { COACH_REFERENCES, coachContextFingerprint } from './coach-context';
-import type { CoachMessage, CoachProposal } from './coach-types';
+import type { CoachImage, CoachMessage, CoachProposal } from './coach-types';
 import type { OperationGuard, SaveInput } from './store';
 
 export interface CoachStore {
@@ -14,6 +14,8 @@ export interface CoachStore {
   saveEntries(owner: string, inputs: SaveInput[]): Promise<void>;
   acquireRefreshLock(owner: string, name: string): Promise<string | null>;
   releaseRefreshLock(owner: string, name: string, token: string): Promise<void>;
+  saveMealPhoto?(owner: string, proposalId: string, image: CoachImage, guard: OperationGuard): Promise<string>;
+  removeMealPhoto?(owner: string, path: string): Promise<void>;
 }
 type Generate = (input: CoachRequest, context: ReturnType<typeof buildCoachContext>) => ReturnType<typeof generateCoach>;
 type StoredRequest = CoachMessage & { attemptedAt?: string[] };
@@ -104,6 +106,7 @@ export async function sendCoach(
         targetId: target?.id ?? null, targetRevision: target?.revision ?? null,
         status: 'pending', requestId: input.id, assumptions: draft.assumptions,
         generation: guard.generation, model, createdAt: now,
+        ...(input.image ? { photoDigest: validateCoachImage(input.image)! } : {}),
       };
       return { guard, id: `coach-proposal:${input.id}:${index}`, kind: 'proposal', localDate: input.date, data };
     });
@@ -125,6 +128,7 @@ export const coachDecisionSchema = z.object({
   id: z.string().regex(/^coach-proposal:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-5]$/i),
   revision: z.number().int().positive(), decision: z.enum(['save', 'dismiss']),
   date: dateSchema.optional(), meal: mealSchema.optional(),
+  image: coachRequestSchema.innerType().shape.image,
 }).strict();
 export type CoachDecision = z.infer<typeof coachDecisionSchema>;
 
@@ -149,6 +153,8 @@ export async function decideCoach(
       throw problem('This estimate changed in another session. Refresh before saving.');
     const writes: SaveInput[] = [];
     let mealId: string | undefined, date = data.date, updatedMeal: Meal | undefined;
+    let uploadedPhoto: string | undefined;
+    if (input.image && input.decision !== 'save') throw new Error('Photos are saved only with a confirmed meal.');
     if (input.decision === 'save') {
       date = input.date ?? data.date;
       updatedMeal = mealSchema.parse(input.meal ?? data.meal);
@@ -159,8 +165,8 @@ export async function decideCoach(
       if (!target && await store.getEntry(owner, mealId))
         throw problem('This meal identity already exists. Refresh the journal.');
       const entries = await store.listEntries(owner);
-      // Original photo references and message time are immutable through the
-      // draft editor. New transient photos are never saved as file references.
+      // The draft editor cannot assign photo references or rewrite message time.
+      // A retained photo is attached below only after its reviewed digest matches.
       updatedMeal = {
         ...updatedMeal, messageTime: data.meal.messageTime,
         photoId: data.meal.photoId,
@@ -168,6 +174,13 @@ export async function decideCoach(
       assertJournalDate('meal', date, updatedMeal as unknown as Record<string, unknown>, profileOf(entries).timezone, target);
       if (updatedMeal.workoutId && !entries.some(e => e.id === updatedMeal!.workoutId && e.kind === 'workout' && !e.deleted))
         throw new Error('Choose an existing run.');
+      if (input.image) {
+        if (!data.photoDigest || validateCoachImage(input.image) !== data.photoDigest)
+          throw problem('This photo differs from the reviewed estimate. Create a new estimate before saving it.', 422);
+        if (!store.saveMealPhoto || !store.removeMealPhoto) throw new Error('Private meal photo storage is unavailable.');
+        uploadedPhoto = await store.saveMealPhoto(owner, proposal.id, input.image, guard);
+        updatedMeal.photoId = uploadedPhoto;
+      }
       writes.push({ guard, id: mealId, kind: 'meal', localDate: date, data: updatedMeal, expectedRevision: target?.revision });
     }
     const next: CoachProposal = {
@@ -175,7 +188,23 @@ export async function decideCoach(
       ...(mealId ? { savedMealId: mealId, date, meal: updatedMeal! } : {}),
     };
     writes.push({ guard, id: proposal.id, kind: 'proposal', localDate: proposal.localDate, data: next, expectedRevision: proposal.revision });
-    await store.saveEntries(owner, writes);
+    try { await store.saveEntries(owner, writes); }
+    catch (error) {
+      if (uploadedPhoto && mealId) {
+        // A response can be lost after a successful commit. Remove an upload only
+        // when a fresh read proves it was not attached; otherwise preserve it.
+        try {
+          const [committedMeal, committedProposal] = await Promise.all([
+            store.getEntry(owner, mealId), store.getEntry(owner, proposal.id),
+          ]);
+          const wasCommitted = committedProposal?.data.status === 'saved' && committedProposal.data.savedMealId === mealId;
+          // A later edit can replace the photo while its earlier revision still
+          // needs this file for Undo. The saved proposal proves that commit.
+          if (!wasCommitted && committedMeal?.data.photoId !== uploadedPhoto) await store.removeMealPhoto!(owner, uploadedPhoto);
+        } catch { /* An uncertain commit must not lose its photo. Delete all also clears private files. */ }
+      }
+      throw error;
+    }
     return {
       proposal: await store.getEntry(owner, proposal.id),
       ...(mealId ? { meal: await store.getEntry(owner, mealId) } : {}),

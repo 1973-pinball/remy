@@ -33,4 +33,5 @@ export interface CoachProposal {
   generation: number;
   model: string;
   createdAt: string;
+  photoDigest?: string;
 }

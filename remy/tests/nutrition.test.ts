@@ -14,7 +14,7 @@ const plan:Plan={title:'Long run',start:'2026-04-05T12:00:00Z',allDay:false,dura
 const confirmed=entry('profile','profile',{...DEFAULT_PROFILE,confirmed:true,weightKg:70},null);
 
 test('calorie target remains baseline plus explicit adjustment; WHOOP is not added to Garmin',()=>{
- const data=[confirmed,entry('meal','m',meal),entry('workout','w',workout),entry('day','d',{complete:false,adjustment:350,adjustmentReason:'Manual training adjustment',feedback:''}),entry('recovery','r',{start:'2026-04-04T04:00:00Z',end:'2026-04-05T04:00:00Z',scoreState:'SCORED',kilojoules:8368})];
+ const data=[confirmed,entry('meal','m',meal),entry('workout','w',workout),entry('day','d',{complete:false,adjustment:350,adjustmentReason:'Manual training adjustment',feedback:''}),entry('recovery','r',{start:'2026-04-04T04:00:00Z',end:null,scoreState:'SCORED',kilojoules:8368})];
  const result=summarize(data,date,{now});assert.equal(result.target,2650);assert.equal(result.expenditure[0].kcal,2000);assert.equal(result.totals.calories,500);assert.match(result.limitations.join(' '),/physiological cycles/);
 });
 test('missing or unconfirmed weight never invents personalized carbohydrate grams',()=>{

@@ -17,9 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { summarize, ofKind, round, type Entry, type Meal, type Nutrients } from "@/lib/domain";
 import { coachContextFingerprint, coachProgress } from "@/lib/coach-context";
+import { recoveryForDate } from "@/lib/recovery-context";
 import type { CoachMessage, CoachProposal } from "@/lib/coach-types";
 import { formInstant, localClock } from "@/lib/form-time";
 import { etlFields, Field } from "./forms";
+import styles from "./coach.module.css";
 
 type Style = "short" | "medium" | "extended";
 type Photo = { mimeType: "image/jpeg"; base64: string };
@@ -44,7 +46,7 @@ const amount = (value: number | null | undefined, unit = "") =>
 const numeric = (value: string) => value === "" ? null : Number(value);
 
 /** Canvas creates a new, bounded image; original metadata and bytes are not sent. */
-async function preparePhoto(file: File): Promise<Photo> {
+export async function preparePhoto(file: File): Promise<Photo> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
     throw new Error("Choose a JPEG, PNG, or WebP photo.");
   }
@@ -73,7 +75,7 @@ async function preparePhoto(file: File): Promise<Photo> {
   }
 }
 
-function MealDraft({
+export function MealDraft({
   entry,
   original,
   timezone,
@@ -280,9 +282,8 @@ function SavedProgress({ records, date }: { records: Entry[]; date: string }) {
   const totals = historical ? summary.totals : progress.totals;
   const flexCalories = historical ? summary.etl.flexCalories.value : progress.flex.value;
   const runFuelCalories = historical ? summary.etl.runFuelCalories.value : progress.runFuelCalories;
-  const latestRecovery = [...summary.recovery]
-    .filter((entry) => entry.data.recovery != null || entry.data.sleepHours != null)
-    .sort((a, b) => b.data.start.localeCompare(a.data.start))[0]?.data;
+  const datedRecovery = recoveryForDate(records, date, summary.profile.timezone, summary.generatedAt);
+  const latestRecovery = datedRecovery.selected;
   const knownDurations = summary.workouts.filter((entry) => entry.data.durationSec != null);
   const minutes = knownDurations.length
     ? knownDurations.reduce((sum, entry) => sum + entry.data.durationSec! / 60, 0)
@@ -362,8 +363,11 @@ function SavedProgress({ records, date }: { records: Entry[]; date: string }) {
           ? `Next: ${summary.plans[0].data.title} · ${summary.plans[0].localDate}.`
           : "No planned session in the next 48 hours."}</p>
         <p>{latestRecovery
-          ? `WHOOP recovery: ${amount(latestRecovery.recovery, "%")} · sleep: ${amount(latestRecovery.sleepHours, "h")}.`
+          ? `WHOOP recovery for ${date}: ${amount(latestRecovery.recovery, "%")} · sleep: ${amount(latestRecovery.sleepHours, "h")}.`
           : "No WHOOP recovery or sleep available for this date."}</p>
+        {latestRecovery && <p className="microcopy">{latestRecovery.dateBasis === "sleep-completion"
+          ? `Sleep ended ${latestRecovery.sleepCompletedLocal}.${datedRecovery.matchingCycleCount > 1 ? " Latest sleep-completion reading shown." : ""}`
+          : "Sleep completion time is unavailable; this date is provisionally based on the cycle start."}</p>}
         <p className="microcopy">Uses synchronized records. WHOOP and workout energy estimates are not added together as a calorie allowance.</p>
       </section>
     </aside>
@@ -376,17 +380,19 @@ export function CoachView({
   demo,
   authenticated,
   onChanged,
+  compact = false,
 }: {
   records: Entry[];
   date: string;
   demo: boolean;
   authenticated: boolean;
   onChanged: () => Promise<void>;
+  compact?: boolean;
 }) {
   const [availability, setAvailability] = useState<"checking" | "ready" | "unavailable" | "error">("checking");
   const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const [text, setText] = useState("");
-  const [style, setStyle] = useState<Style>("medium");
+  const [style, setStyle] = useState<Style>(compact ? "short" : "medium");
   const [consent, setConsent] = useState(false);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -552,11 +558,11 @@ export function CoachView({
       : availability === "ready" ? "Configured"
         : availability === "checking" ? "Checking connection" : "Not connected";
   return (
-    <div className="coach-layout">
+    <div className={`coach-layout${compact ? ` ${styles.compact}` : ""}`}>
       <section className="card chat-card coach-card">
         <div className="chat-mode">
           <Sparkles size={20} />
-          <div><strong>Remy · Eat to Live sidekick</strong><p>Fuel your running. Recover well. Keep your food priorities.</p></div>
+          <div><strong>{compact ? "What should I eat next?" : "Remy · Eat to Live sidekick"}</strong><p>{compact ? "ETL meals, running fuel and recovery, using your saved records." : "Fuel your running. Recover well. Keep your food priorities."}</p></div>
           <span className="pill">{status}</span>
         </div>
         {disabled && (
@@ -572,7 +578,8 @@ export function CoachView({
           </div>
         )}
         <div className="chat-messages coach-messages" aria-live="polite">
-          {!messages.length && (
+          {!messages.length && compact && <p className="microcopy">Ask for one practical next meal or snack. Missing food logs stay unknown; meal estimates need your review to save.</p>}
+          {!messages.length && !compact && (
             <div className="chat-welcome">
               <span className="empty-icon"><Leaf /></span>
               <h2>Eat well for the miles ahead.</h2>
@@ -622,7 +629,9 @@ export function CoachView({
         )}
         <div className="suggestions coach-prompts">
           {[
-            ["Log a meal", "Help me log this meal: ", "medium"],
+            compact
+              ? ["Suggest my next meal", "Using my saved food, upcoming running and relevant recovery data, suggest one practical next meal or snack that supports recovery and my Eat to Live preferences. Explain the main reason and any important missing information.", "short"]
+              : ["Log a meal", "Help me log this meal: ", "medium"],
             ["Fuel my next run", "How should I fuel my next run while keeping Eat to Live priorities?", "medium"],
             ["Review today", "Review my logged day: fueling, recovery, Eat to Live wins and gaps, and my best next move.", "extended"],
           ].map(([label, prompt, responseStyle]) => (
@@ -681,7 +690,7 @@ export function CoachView({
           </div>
         </form>
       </section>
-      <SavedProgress records={records} date={date} />
+      {!compact && <SavedProgress records={records} date={date} />}
     </div>
   );
 }

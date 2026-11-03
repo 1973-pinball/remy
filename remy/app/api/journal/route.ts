@@ -45,6 +45,8 @@ export async function POST(request: Request) {
     if (id != null && (typeof id !== 'string' || !/^[A-Za-z0-9:_-]{1,180}$/.test(id))) throw new Error('Invalid record identity.');
     const old = id ? await getEntry(user.userId, id) : null;
     if (old && old.kind !== kind) throw new Error('Record type cannot change.');
+    if ((kind === 'meal' || kind === 'savedMeal') && 'photoId' in data && data.photoId != null && data.photoId !== old?.data.photoId)
+      throw new Error('Attach a photo through a reviewed meal estimate. Existing photo references cannot be reassigned.');
 
     if (kind === 'meal' || kind === 'workout' || kind === 'plan') {
       const savedProfile = await getEntry(user.userId, 'profile');

@@ -153,6 +153,62 @@ test('a reused request ID cannot change message, selected date, response style o
   assert.equal(h.calls(), 1);
 });
 
+test('a reviewed matching photo uploads only on confirmation, attaches once, and is never stored in journal JSON', async () => {
+  const h = harness(), files = new Map<string, string>(); let uploads = 0;
+  const photo = {mimeType: 'image/png' as const, base64: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64')};
+  const path = `${owner}/1/meal-photos/${requestId}-0.png`;
+  h.store.saveMealPhoto = async (user, id, image, guard) => { assert.equal(user, owner); assert.equal(id, proposalId); assert.equal(guard.generation, 1); uploads++; files.set(path, image.base64); return path; };
+  h.store.removeMealPhoto = async (_user, photoPath) => { files.delete(photoPath); };
+  await h.send(request({image: photo}));
+  assert.equal(files.size, 0);
+  const confirmation = {id: proposalId, revision: 1, decision: 'save' as const, image: photo};
+  const saved = await decideCoach(owner, confirmation, h.guard(), h.store);
+  assert.equal(saved.meal?.data.photoId, path);
+  assert.equal(files.size, 1);
+  await decideCoach(owner, confirmation, h.guard(), h.store);
+  assert.equal(uploads, 1);
+  assert.equal([...h.records().values()].filter(row => row.kind === 'meal').length, 1);
+  assert.ok(!JSON.stringify([...h.records().values()]).includes(photo.base64));
+});
+
+test('photo mismatch and dismissal cannot upload files, and an unsuccessful confirmation removes its orphan upload', async () => {
+  const h = harness(), files = new Set<string>(); let uploads = 0, removals = 0;
+  const photo = {mimeType: 'image/png' as const, base64: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64')};
+  h.store.saveMealPhoto = async () => { uploads++; files.add('photo-path'); return 'photo-path'; };
+  h.store.removeMealPhoto = async (_user, path) => { removals++; files.delete(path); };
+  await h.send(request({image: photo}));
+  const confirmation = {id: proposalId, revision: 1, decision: 'save' as const, image: photo};
+  const different = {...photo, base64: Buffer.from([137,80,78,71,13,10,26,10,1,0,0,0]).toString('base64')};
+  await assert.rejects(decideCoach(owner, {...confirmation, image: different}, h.guard(), h.store), /differs from the reviewed estimate/);
+  await assert.rejects(decideCoach(owner, {...confirmation, decision: 'dismiss'}, h.guard(), h.store), /only with a confirmed meal/);
+  assert.equal(uploads, 0);
+  h.hooks.failBatchAt = 1;
+  await assert.rejects(decideCoach(owner, confirmation, h.guard(), h.store), /Simulated transaction failure/);
+  assert.equal(files.size, 0); assert.equal(removals, 1); assert.equal(h.records().has(mealId), false);
+  assert.equal(h.records().get(proposalId)!.data.status, 'pending');
+  await decideCoach(owner, confirmation, h.guard(), h.store);
+  assert.equal(files.size, 1);
+});
+
+test('a lost save response preserves an earlier photo revision even if a later edit replaces its attachment', async () => {
+  const h = harness(); let removals = 0;
+  const photo = {mimeType: 'image/png' as const, base64: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64')};
+  h.store.saveMealPhoto = async () => 'attached-photo';
+  h.store.removeMealPhoto = async () => { removals++; };
+  await h.send(request({image: photo}));
+  const save = h.store.saveEntries;
+  h.store.saveEntries = async (user, writes) => {
+    await save(user, writes);
+    h.revise(mealId, {...h.records().get(mealId)!.data, photoId: 'later-replacement-photo'});
+    throw new Error('Response lost after commit');
+  };
+  const confirmation = {id: proposalId, revision: 1, decision: 'save' as const, image: photo};
+  await assert.rejects(decideCoach(owner, confirmation, h.guard(), h.store), /Response lost/);
+  assert.equal(removals, 0);
+  const replay = await decideCoach(owner, confirmation, h.guard(), h.store);
+  assert.equal(replay.meal?.data.photoId, 'later-replacement-photo');
+});
+
 test('explicit confirmation adds once and a replay preserves later corrections and deletion', async () => {
   const h = harness();
   await h.send();

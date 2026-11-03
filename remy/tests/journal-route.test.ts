@@ -95,6 +95,14 @@ test('a manual request captured before deletion cannot recreate data after its s
   assert.equal(app.writes.length, 0);
 });
 
+test('manual meal creation cannot assign a private photo path', async () => {
+  const app = harness({...mealBody, data: {...mealBody.data, photoId: 'other-owner/1/meal-photos/arbitrary.jpg'}});
+  const response = await app.start();
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Existing photo references cannot be reassigned/);
+  assert.equal(app.writes.length, 0);
+});
+
 test('undo retains its original operation guard if deletion finishes while its body is pending', async () => {
   const app = harness({ action: 'undo', id: 'meal-1', revision: 7 }, { slow: true });
   const pending = app.start();

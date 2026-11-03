@@ -54,7 +54,7 @@ export function HistoricalNutritionTable({
   return (
     <section className="card historical-history">
       <div className="section-heading">
-        <h2><CalendarDays size={18} /> Daily history from REMY</h2>
+        <h2><CalendarDays size={18} /> Original REMY daily summaries</h2>
         <span>{summaries.length} historical {summaries.length === 1 ? "summary" : "summaries"}</span>
       </div>
       <p className="muted">

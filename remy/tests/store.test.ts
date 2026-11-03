@@ -9,6 +9,26 @@ function serverTest(code:string){
   const result=spawnSync(process.execPath,['--conditions=react-server','--import','tsx','--input-type=module','-e',code],{cwd,encoding:'utf8',timeout:30000});
   assert.equal(result.status,0,result.stderr||result.stdout||String(result.error));
 }
+
+test('meal photo upload removes its private file if journal generation changes during upload',()=>serverTest(`
+  import assert from 'node:assert/strict';
+  process.env.NEXT_PUBLIC_SUPABASE_URL='https://unit-test.example.invalid';process.env.SUPABASE_SECRET_KEY='sb_secret_unit_test_only';
+  const owner='10000000-0000-4000-8000-000000000000';let stateReads=0,uploaded=false,removed=false;
+  globalThis.fetch=async(input,init)=>{
+    const url=new URL(String(input));assert.equal(url.host,'unit-test.example.invalid');
+    if(url.pathname.endsWith('/rpc/remy_journal_state'))return Response.json({generation:++stateReads===1?1:2,deleting:false});
+    if(url.pathname.endsWith('/object/remy-files')&&init.method==='DELETE'){
+      const body=JSON.parse(init.body);assert.equal(body.prefixes.length,1);assert.ok(body.prefixes[0].startsWith(owner+'/1/meal-photos/'));removed=true;return Response.json([]);
+    }
+    if(url.pathname.includes('/object/remy-files/'+owner+'/1/meal-photos/')&&init.method==='POST'){uploaded=true;return Response.json({Key:'synthetic'});}
+    throw new Error('Unexpected request');
+  };
+  const {saveMealPhoto,readMealPhoto}=await import('./lib/store.ts');
+  const image={mimeType:'image/png',base64:Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64')};
+  await assert.rejects(saveMealPhoto(owner,'coach-proposal:10000000-0000-4000-8000-000000000001:0',image,{generation:1}),/changed during the photo upload/);
+  assert.ok(uploaded);assert.ok(removed);
+  await assert.rejects(readMealPhoto(owner,'20000000-0000-4000-8000-000000000000/1/meal-photos/10000000-0000-4000-8000-000000000001-0.png'),/not available/);
+`));
 test('revisions from one source and matched sources refresh canonical run metrics without overwriting local corrections',()=>serverTest(`
   import assert from 'node:assert/strict';
   import {reconcileWorkout} from './lib/connections.ts';
