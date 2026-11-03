@@ -15,6 +15,42 @@ const dayCycle = (id: string, date: string, kcal: number) => {
   return cycle(id, bounds.start, bounds.end, kcal);
 };
 const close = (actual: number | null, expected: number) => assert.ok(actual !== null && Math.abs(actual - expected) < 0.00001, `${actual} ≠ ${expected}`);
+const run = (id: string, date: string, miles: number | null, sport = 'running', extra: Record<string, unknown> = {}) =>
+  entry(id, 'workout', {distanceMeters: miles === null ? null : miles * 1609.344, sport, ...extra}, date, 'strava');
+
+test('miles per week uses the selected completed calendar days and canonical running records', () => {
+  const records = [
+    run('older', '2026-10-26', 10), run('treadmill', '2026-10-27', 3, 'treadmill'),
+    run('linked-run', '2026-11-02', 7, 'TrailRun', {sourceRecords: {'strava:one': {data: {distanceMeters: 7*1609.344}}, 'tredict:two': {data: {distanceMeters: 7*1609.344}}}}),
+    run('today', '2026-11-03', 99), run('ride', '2026-11-02', 100, 'Ride'),
+    {...run('deleted', '2026-11-01', 100), deleted: true},
+  ];
+  const seven = nutritionPeriodSummary(records, '2026-11-03', 7, now);
+  close(seven.training.milesPerWeek, 10); close(seven.training.totalMiles, 10);
+  assert.equal(seven.training.runCount, 2); assert.equal(seven.training.knownDistanceRuns, 2); assert.equal(seven.training.partial, false);
+  close(nutritionPeriodSummary(records, '2026-11-03', 14, now).training.milesPerWeek, 10);
+  close(nutritionPeriodSummary(records, '2026-11-03', 30, now).training.milesPerWeek, 20/30*7);
+});
+
+test('running distance preserves explicit zero, reports missing-distance partials, and leaves absent data unknown', () => {
+  for (const records of [[], [run('ride', '2026-11-02', 10, 'Ride')], [run('outside', '2026-10-01', 10)]]) {
+    const result = nutritionPeriodSummary(records, '2026-11-02', 7, now);
+    assert.equal(result.training.milesPerWeek, null); assert.equal(result.training.totalMiles, null); assert.equal(result.training.runCount, 0);
+  }
+  const unknown = nutritionPeriodSummary([run('unknown', '2026-11-02', null)], '2026-11-02', 7, now);
+  assert.equal(unknown.training.milesPerWeek, null); assert.equal(unknown.training.missingDistanceRuns, 1); assert.equal(unknown.training.partial, true);
+  const partial = nutritionPeriodSummary([run('known', '2026-11-01', 5), run('unknown', '2026-11-02', null)], '2026-11-02', 7, now);
+  close(partial.training.milesPerWeek, 5); assert.equal(partial.training.knownDistanceRuns, 1); assert.equal(partial.training.runCount, 2); assert.equal(partial.training.partial, true);
+  close(nutritionPeriodSummary([run('zero', '2026-11-02', 0)], '2026-11-02', 7, now).training.milesPerWeek, 0);
+});
+
+test('all-history includes the earliest saved run and weekly mileage keeps calendar-day denominators across DST', () => {
+  const all = nutritionPeriodSummary([run('old', '2026-10-01', 33), food('recent', '2026-11-02', 2000)], '2026-11-03', 'all', now);
+  assert.equal(all.from, '2026-10-01'); assert.equal(all.dayCount, 33); close(all.training.milesPerWeek, 7);
+  const acrossDst = nutritionPeriodSummary([run('dst', '2026-11-01', 7)], '2026-11-02', 7, now);
+  assert.equal(acrossDst.days.find(day => day.date === '2026-11-01')!.hours, 25);
+  close(acrossDst.training.milesPerWeek, 7);
+});
 
 test('headline windows contain completed local dates, with 30 days by default and no fabricated zero averages', () => {
   for (const selected of ['2026-11-02', '2026-11-03', '2099-01-01']) {

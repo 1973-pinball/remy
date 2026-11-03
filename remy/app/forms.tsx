@@ -28,6 +28,7 @@ import {
   type Plan,
 } from "@/lib/domain";
 import { localClock, formInstant } from "@/lib/form-time";
+import { milesFromMeters, milesInputValue, metersFromMilesInput } from "@/lib/run-distance";
 import type { Candidate, ImportPreview } from "@/lib/imports";
 export type SaveRecord = {
   id?: string;
@@ -441,7 +442,7 @@ export function ImportDialog({
                     <p className="muted">
                       {c.data.distanceMeters == null
                         ? "Distance unknown"
-                        : `${(c.data.distanceMeters / 1000).toFixed(2)} km`}{" "}
+                        : `${milesFromMeters(c.data.distanceMeters).toFixed(2)} mi`}{" "}
                       ·{" "}
                       {c.data.durationSec == null
                         ? "Duration unknown"
@@ -951,10 +952,7 @@ export function TrainingDialog({
                     num(f.get("duration")) == null
                       ? null
                       : Number(f.get("duration")) * 60,
-                  distanceMeters:
-                    num(f.get("distance")) == null
-                      ? null
-                      : Number(f.get("distance")) * 1000,
+                  distanceMeters: metersFromMilesInput(String(f.get("distance") ?? ''), d?.distanceMeters),
                   notes: String(f.get("notes")),
                   ...(planned
                     ? {
@@ -1012,14 +1010,14 @@ export function TrainingDialog({
                 defaultValue={d?.durationSec == null ? "" : d.durationSec / 60}
               />
             </Field>
-            <Field label="Distance (km)">
+            <Field label="Distance (miles)">
               <Input
                 name="distance"
                 type="number"
                 min="0"
                 step="0.01"
                 defaultValue={
-                  d?.distanceMeters == null ? "" : d.distanceMeters / 1000
+                  milesInputValue(d?.distanceMeters)
                 }
               />
             </Field>

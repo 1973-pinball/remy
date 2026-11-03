@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Flame, Footprints, Moon, Utensils } from 'lucide-react';
 import { summarize, type Entry } from '@/lib/domain';
 import { recoveryContext, recoveryForDate } from '@/lib/recovery-context';
+import { milesFromMeters } from '@/lib/run-distance';
 import styles from './journal-layout.module.css';
 const amount=(n:number|null|undefined,unit='')=>n==null?'—':`${n.toLocaleString('en-US',{maximumFractionDigits:1})}${unit}`;
 export function TodayOverview({records,date,onAdjust,onConnections}:{records:Entry[];date:string;onAdjust:()=>void;onConnections:()=>void}) {
@@ -10,7 +11,7 @@ export function TodayOverview({records,date,onAdjust,onConnections}:{records:Ent
  const recovery=recoveryForDate(records,date,summary.profile.timezone,summary.generatedAt).selected;
  const runs=summary.workouts.filter(r=>/run|treadmill/i.test(r.data.sport));
  const knownDistance=runs.filter(r=>r.data.distanceMeters!=null),knownDuration=runs.filter(r=>r.data.durationSec!=null);
- const distance=knownDistance.length?knownDistance.reduce((n,r)=>n+r.data.distanceMeters!,0)/1000:null;
+ const distance=knownDistance.length?milesFromMeters(knownDistance.reduce((n,r)=>n+r.data.distanceMeters!,0)):null;
  const minutes=knownDuration.length?knownDuration.reduce((n,r)=>n+r.data.durationSec!,0)/60:null;
  const cycles=summary.recovery.map(entry=>recoveryContext(entry,date,summary.profile.timezone,summary.generatedAt));
  const displayCycle=recovery??(cycles.length===1?cycles[0]:null);
@@ -36,9 +37,9 @@ export function TodayOverview({records,date,onAdjust,onConnections}:{records:Ent
   </section>
   <section className={`card ${styles.movement}`}>
    <div className={styles.sectionHead}><h2><Footprints size={18}/>Running & recovery</h2></div>
-   <div className={styles.runHeadline}><strong>{amount(distance)}<small>km</small></strong><span>{minutes==null?'No recorded run duration':`${amount(minutes)} minutes`}{runs.length>1?` · ${runs.length} runs`:''}</span></div>
+   <div className={styles.runHeadline}><strong>{amount(distance)}<small>mi</small></strong><span>{minutes==null?'No recorded run duration':`${amount(minutes)} minutes`}{runs.length>1?` · ${runs.length} runs`:''}</span></div>
    {runs.length>0&&(knownDistance.length<runs.length||knownDuration.length<runs.length)&&<p className={styles.smallNote}>Known distance for {knownDistance.length}/{runs.length} runs · duration for {knownDuration.length}/{runs.length}. Totals are partial.</p>}
-   {runs.length?<div className={styles.runList}>{runs.map(run=><div id={run.id} key={run.id}><strong>{run.data.title}</strong><span>{run.source==='strava'?'Strava':'Recorded run'} · {amount(run.data.distanceMeters==null?null:run.data.distanceMeters/1000,' km')} · {amount(run.data.durationSec==null?null:run.data.durationSec/60,' min')}{run.data.avgHr!=null?` · ${amount(run.data.avgHr)} bpm`:''}</span></div>)}</div>:<p className={styles.smallNote}>No run is recorded for this date. <button className="text-button" onClick={onConnections}>Check connections</button></p>}
+   {runs.length?<div className={styles.runList}>{runs.map(run=><div id={run.id} key={run.id}><strong>{run.data.title}</strong><span>{run.source==='strava'?'Strava':'Recorded run'} · {amount(run.data.distanceMeters==null?null:milesFromMeters(run.data.distanceMeters),' mi')} · {amount(run.data.durationSec==null?null:run.data.durationSec/60,' min')}{run.data.avgHr!=null?` · ${amount(run.data.avgHr)} bpm`:''}</span></div>)}</div>:<p className={styles.smallNote}>No run is recorded for this date. <button className="text-button" onClick={onConnections}>Check connections</button></p>}
    <div className={styles.recoveryPair}><div><span>WHOOP recovery</span><strong>{amount(recovery?.recovery,'%')}</strong></div><div><span><Moon size={12}/>Sleep</span><strong>{amount(recovery?.sleepHours,' h')}</strong></div></div>
    {recovery&&<p className={styles.smallNote}>{recovery.dateBasis==='sleep-completion'?`Sleep ended ${recovery.sleepCompletedLocal}.`:'Sleep completion time is missing; this date is provisional.'}</p>}
    {summary.plans[0]&&<div className={styles.nextRun}><small>UP NEXT · {summary.plans[0].localDate}</small><strong>{summary.plans[0].data.title}</strong><span>{amount(summary.plans[0].data.durationSec==null?null:summary.plans[0].data.durationSec/60,' min')} · {summary.plans[0].data.intensity||'Effort unspecified'}</span></div>}

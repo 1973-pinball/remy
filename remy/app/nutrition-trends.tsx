@@ -29,6 +29,7 @@ const energySeries = [
   {key:'weightLb',label:'Weight · lb',color:'#527fa5',axis:'weight',unit:'lb',dash:undefined},
 ] as const;
 type EnergySeriesKey=typeof energySeries[number]['key'];
+type ShareSeriesKey=typeof shares[number]['key'];
 const shortDate = (date:string) => new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric",timeZone:"UTC"}).format(new Date(`${date}T12:00:00Z`));
 const fullDate = (date:string) => new Intl.DateTimeFormat("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}).format(new Date(`${date}T12:00:00Z`));
 const value = (amount:number|null, unit:string) => amount == null ? "Unknown" : `${amount.toLocaleString("en-US",{maximumFractionDigits:1})}${unit === "%" ? "" : " "}${unit}`;
@@ -51,10 +52,10 @@ function EnergyTooltip({active,payload,visible}:{active?:boolean;payload?:readon
   </dl>{visible.includes('rollingNetKcal')&&<><small>{fullDate(addDays(day.date,-6))} – {fullDate(day.date)} · cumulative sum of daily eaten − burned</small>{day.rollingNetKcal===null&&<small>Requires known intake and a full-day burn estimate on all 7 calendar days.</small>}</>}{(visible.includes('calories')||visible.includes('netKcal'))&&<small>{day.foodSource}</small>}{(visible.includes('burnKcal')||visible.includes('netKcal'))&&<small>{day.burnStatus==='complete'?'WHOOP cycle estimate allocated by elapsed time':day.burnStatus==='overlap'?'Overlapping WHOOP periods; burn is unknown':day.burnStatus==='partial'?'WHOOP covers only part of this date':'No completed WHOOP cycle coverage'}</small>}{visible.includes('weightLb')&&day.weightSource&&<small>{day.weightSource}</small>}</div>;
 }
 
-function ChartTooltip({active,payload,kind}:{active?:boolean;payload?:readonly {payload?:NutritionHistoryDay}[];kind:"energy"|"nutrients"|"shares"}) {
+function ChartTooltip({active,payload,kind,shareVisible=shares.map(series=>series.key)}:{active?:boolean;payload?:readonly {payload?:NutritionHistoryDay}[];kind:"energy"|"nutrients"|"shares";shareVisible?:ShareSeriesKey[]}) {
   const day=payload?.[0]?.payload;
   if(!active||!day)return null;
-  const fields=kind==="energy"?[{key:"calories",label:"Energy",color:"#735191"}]:kind==="shares"?shares:nutrients;
+  const fields=kind==="energy"?[{key:"calories",label:"Energy",color:"#735191"}]:kind==="shares"?shares.filter(series=>shareVisible.includes(series.key)):nutrients;
   return <div className={styles.tooltip}>
     <strong>{fullDate(day.date)}</strong><small>{kind==='shares'?shareSourceLabel(day):sourceLabel(day)}</small>
     <dl>{fields.map(field=>{
@@ -64,13 +65,14 @@ function ChartTooltip({active,payload,kind}:{active?:boolean;payload?:readonly {
         {field.key==='etlPercent'&&day.etlPercentRange&&<small>{value(day.etlPercent,'%')} midpoint plotted</small>}
         {day.source==="meals"&&coverage&&coverage.known>0&&coverage.known<coverage.total&&<small>{coverage.known}/{coverage.total} meals known</small>}</dd></div>;
     })}</dl>
-    {kind==="shares"&&<><p>{day.shareBasis==='historical-conversation-estimate'?'This earlier source estimate retains its original flex convention.':shareExplanation[day.shareStatus]}</p>{day.shareNotes&&<p>{day.shareNotes}</p>}</>}
+    {kind==="shares"&&shareVisible.includes('etlPercent')&&<><p>{day.shareBasis==='historical-conversation-estimate'?'This earlier source estimate retains its original flex convention.':shareExplanation[day.shareStatus]}</p>{day.shareNotes&&shareVisible.length===shares.length&&<p>{day.shareNotes}</p>}</>}
   </div>;
 }
 
 export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry[];selectedDate:string;onOpenDate:(date:string)=>void}) {
   const [range,setRange]=useState<SummaryRange>(30);
   const [visible,setVisible]=useState<string[]>(nutrients.map(n=>n.key));
+  const [shareVisible,setShareVisible]=useState<ShareSeriesKey[]>(shares.map(series=>series.key));
   const [energyVisible,setEnergyVisible]=useState<EnergySeriesKey[]>(['rollingNetKcal','weightLb']);
   const through=useMemo(()=>records.filter(e=>!e.deleted&&["meal","dailySummary"].includes(e.kind)&&e.localDate)
     .reduce((last,e)=>e.localDate!>last?e.localDate!:last,"")||selectedDate,[records,selectedDate]);
@@ -103,6 +105,7 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
   },[energyDays,energyVisible]);
   const recorded=days.filter(day=>day.source!=="unknown").length;
   const classified=days.filter(day=>day.etlPercent!==null).length;
+  const selectedSharesHaveData=days.some(day=>shareVisible.some(key=>day[key]!==null));
   const estimates=days.filter(day=>day.source==="historical-summary").length;
   const weightDays=energyDays.filter(day=>day.weightLb!==null).length;
   const hasEnergy=energyDays.some(day=>day.calories!==null||day.burnKcal!==null||day.weightLb!==null);
@@ -119,17 +122,17 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
         <button type="button" key={option} aria-pressed={range===option} onClick={()=>setRange(option)}>{option==="all"?"All history":`${option} days`}</button>)}</div>
     </header>
     <div className={styles.averageMeta}><span>{fullDate(averages.from)} – {fullDate(averages.through)}</span><span>{averages.dayCount} completed {averages.dayCount===1?'day':'days'} · selection changes averages only</span></div>
-    <dl className={styles.averageGrid} aria-label="Energy and Eat to Live averages">
+    <dl className={styles.averageGrid} aria-label="Energy, running and nutrient averages">
       <AverageStat label="Calories eaten" amount={averages.nutrients.calories.average} unit="kcal/day" coverage={`${averages.nutrients.calories.knownDays}/${averages.dayCount} days with logged calories`} tone="purple"/>
       <AverageStat label="Estimated calories burned" amount={averages.burn.average} unit="kcal/day" coverage={`${averages.burn.knownDays}/${averages.dayCount} days covered by WHOOP`} tone="tan"/>
       <AverageStat label="Eaten − burned" amount={averages.comparison.differenceAverage} unit="kcal/day" signed coverage={`${averages.comparison.pairedDays}/${averages.dayCount} matched days${averages.comparison.pairedDays?` · ${Math.round(averages.comparison.intakeAverage!).toLocaleString()} − ${Math.round(averages.comparison.burnAverage!).toLocaleString()}`:' · no comparable daily values'}`}/>
       <AverageStat label="ETL balance" amount={averages.etl.percent} unit="%" coverage={`${averages.etl.classifiedDays}/${averages.dayCount} days classified${rangeEstimates?` · ${rangeEstimates} source ranges`:''}`} tone="purple"/>
-    </dl>
-    <dl className={`${styles.averageGrid} ${styles.nutrientAverages}`} aria-label="Daily nutrient averages">
+      <AverageStat label="Miles/week" amount={averages.training.milesPerWeek} unit="mi/week" tone="tan" coverage={averages.training.runCount===0?'No saved runs in this range':averages.training.partial?`Partial · ${averages.training.knownDistanceRuns}/${averages.training.runCount} runs have distance`:`${value(averages.training.totalMiles,'mi')} · ${averages.training.runCount} saved ${averages.training.runCount===1?'run':'runs'} · ${averages.dayCount}-day rate`}/>
       {nutrients.map(n=><AverageStat key={n.key} label={n.label} amount={averages.nutrients[n.key].average} unit="g/day" coverage={`${averages.nutrients[n.key].knownDays}/${averages.dayCount} days with values${averages.nutrients[n.key].partialDays?` · ${averages.nutrients[n.key].partialDays} partial`:''}`}/>)}
     </dl>
     <details className={`${styles.values} ${styles.averageDetails}`}><summary>How these averages are calculated</summary><div className={styles.methodNotes}>
       <p>Intake averages use days with recorded values; missing days are not zero. {averages.nutrients.calories.partialDays>0?`${averages.nutrients.calories.partialDays} calorie totals have missing meal estimates. `:''}A logged day can still be incomplete.</p>
+      <p>{averages.method.training}</p>
       <p>{averages.method.burn}</p><p>{averages.method.comparison} {averages.comparison.pairedDays>0?`For those matched days: ${value(averages.comparison.intakeAverage,'kcal/day')} eaten and ${value(averages.comparison.burnAverage,'kcal/day')} estimated burned.`:''}</p>
       <p>{averages.method.etl} {averages.etl.percent===null?'No complete ETL classification is available in this lookback.':''}</p>
       {rangeEstimates>0&&<p>{rangeEstimates} {rangeEstimates===1?'day was':'days were'} reported as a range. The graph and weighted average use the midpoint; the original range remains in the tooltip.</p>}
@@ -174,17 +177,18 @@ export function NutritionTrends({records,selectedDate,onOpenDate}:{records:Entry
         </div>
       </div>
       <div className={`${styles.panel} ${styles.sharePanel}`}>
-        <div className={styles.panelHeader}><div><h3>Eat to Live balance</h3><p>ETL balance, regular flex, and running fuel</p></div><span>{classified} of {days.length} ETL dates classified</span></div>
-        <div className={styles.legend}>{shares.map(s=><span key={s.key}><i style={{background:s.color}}/>{s.label}</span>)}</div>
-        {classified?<div className={styles.shareChart} aria-label="Daily ETL, flex, and running-fuel percentages of recorded energy">
+        <div className={styles.panelHeader}><div><h3>Eat to Live balance</h3><p>Percent of recorded calories · toggle a series below</p></div><span>{classified} of {days.length} ETL dates classified</span></div>
+        <div className={styles.legend} role="group" aria-label="Visible Eat to Live balance series">{shares.map(series=><button type="button" key={series.key} aria-pressed={shareVisible.includes(series.key)}
+          onClick={()=>setShareVisible(current=>current.includes(series.key)?current.filter(key=>key!==series.key):[...current,series.key])}><i style={{background:series.color}}/>{series.label}</button>)}</div>
+        {shareVisible.length&&selectedSharesHaveData?<div className={styles.shareChart} aria-label={`Daily energy shares chart: ${shares.filter(series=>shareVisible.includes(series.key)).map(series=>series.label).join(', ')}`}>
           <ResponsiveContainer width="100%" height="100%" initialDimension={{width:680,height:230}}>
             <LineChart accessibilityLayer data={days} margin={{top:8,right:12,bottom:8,left:0}}>
               {axes}<YAxis width={42} domain={[0,100]} ticks={[0,25,50,75,100]} tickFormatter={n=>`${n}%`} tick={{fill:"#776b7d",fontSize:11}} axisLine={false} tickLine={false}/>
-              <Tooltip content={<ChartTooltip kind="shares"/>} filterNull={false}/>
-              {shares.map(s=><Line key={s.key} type="linear" dataKey={s.key} name={s.label} stroke={s.color} strokeDasharray={s.dash} strokeWidth={2} connectNulls={false} dot={{r:days.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:4}} isAnimationActive={false}/>)}
+              <Tooltip content={<ChartTooltip kind="shares" shareVisible={shareVisible}/>} filterNull={false}/>
+              {shares.filter(series=>shareVisible.includes(series.key)).map(s=><Line key={s.key} type="linear" dataKey={s.key} name={s.label} stroke={s.color} strokeDasharray={s.dash} strokeWidth={2} connectNulls={false} dot={{r:days.length<=31?2.5:1.5,fill:"#fff",strokeWidth:1.5}} activeDot={{r:4}} isAnimationActive={false}/>)}
             </LineChart>
           </ResponsiveContainer>
-        </div>:<p className={styles.classificationEmpty}>ETL balance is not available yet. Total calories and regular-flex calories need a recorded classification.</p>}
+        </div>:<p className={styles.classificationEmpty}>{shareVisible.length?'No known values for the selected series yet. Choose another series above to view available classifications.':'Choose ETL balance, flex, or running fuel above to show its history.'}</p>}
         <p className={styles.shareNote}>ETL balance excludes regular flex. Running fuel is shown separately and does not reduce the score, so these percentages are not intended to add to 100%.</p>
       </div>
     </>}

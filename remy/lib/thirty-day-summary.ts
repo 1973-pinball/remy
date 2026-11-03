@@ -1,4 +1,4 @@
-import { addDays, dayBounds, localDate, ofKind, profileOf, type Entry, type Nutrients, type Recovery } from './domain';
+import { addDays, dayBounds, localDate, ofKind, profileOf, type Entry, type Nutrients, type Recovery, type Workout } from './domain';
 import { NUTRITION_KEYS, nutritionHistory, type NutritionHistoryDay } from './nutrition-history';
 import { weightHistory } from './weight-history';
 
@@ -87,7 +87,12 @@ export function nutritionPeriodSummary(records: Entry[], selectedDate: string, r
     && Date.parse(entry.data.end) > Date.parse(entry.data.start) && Date.parse(entry.data.end) <= Date.parse(now))
     .map(entry => localDate(entry.data.start, timezone)).filter(date => date <= through);
   const weightDates = weightHistory(records).map(point => point.date).filter(date => date <= through);
-  const firstRecorded = [...(firstFood ? [firstFood] : []), ...cycleDates, ...weightDates].sort()[0] ?? through;
+  // Each canonical workout is counted once; linked provider snapshots are evidence,
+  // not additional runs.
+  const savedRuns = ofKind<Workout>(records, 'workout').filter(entry => /run|treadmill/i.test(entry.data.sport)
+    && entry.localDate !== null && validDate(entry.localDate) && entry.localDate <= through);
+  const runDates = savedRuns.map(entry => entry.localDate!);
+  const firstRecorded = [...(firstFood ? [firstFood] : []), ...cycleDates, ...weightDates, ...runDates].sort()[0] ?? through;
   const from = range === 'all' ? firstRecorded : addDays(through, 1 - range);
   const nutritionByDate = new Map(saved.map(day => [day.date, day]));
   const cycles = completedCycles(records, from, through, now, timezone);
@@ -96,6 +101,10 @@ export function nutritionPeriodSummary(records: Entry[], selectedDate: string, r
     const bounds = dayBounds(date, timezone);
     days.push({... (nutritionByDate.get(date) ?? blankDay(date)), ...burnForDay(cycles, Date.parse(bounds.start), Date.parse(bounds.end))});
   }
+  const runs = savedRuns.filter(entry => entry.localDate! >= from);
+  const runDistances = runs.map(entry => entry.data.distanceMeters).filter(finite);
+  const runMeters = sum(runDistances), totalMiles = runMeters === null ? null : runMeters / 1609.344;
+  const missingDistanceRuns = runs.length - runDistances.length;
   const nutrients = Object.fromEntries(NUTRITION_KEYS.map(key => {
     const known = days.filter(day => finite(day[key])), values = known.map(day => day[key]!);
     return [key, {
@@ -118,6 +127,11 @@ export function nutritionPeriodSummary(records: Entry[], selectedDate: string, r
   return {
     from, through, timezone, range, dayCount: days.length, days,
     nutrients,
+    training: {
+      milesPerWeek: totalMiles === null ? null : totalMiles / days.length * 7,
+      totalMiles, runCount: runs.length, knownDistanceRuns: runDistances.length,
+      missingDistanceRuns, partial: missingDistanceRuns > 0,
+    },
     burn: {
       average: mean(burnValues), total: sum(burnValues), knownDays: burned.length,
       missingDays: days.filter(day => day.burnStatus === 'missing').length,
@@ -138,6 +152,7 @@ export function nutritionPeriodSummary(records: Entry[], selectedDate: string, r
       calorieCoveragePercent: knownCalories !== null && knownCalories > 0 ? classifiedCalories / knownCalories * 100 : null,
     },
     method: {
+      training: 'Miles/week is saved running distance divided by the selected completed calendar days, multiplied by seven. Days without a saved run remain in the denominator. Each canonical run is counted once, regardless of linked sources. Missing distances make the rate partial; missing source history can also understate it. With no known running distance, the value stays unknown.',
       burn: 'WHOOP estimates from completed, scored cycles are spread across their actual elapsed hours to estimate calendar-day burn. Only fully covered days without overlapping cycles enter the average; workout calories are not added again. This is a retrospective approximation, not hourly measured expenditure.',
       comparison: 'Logged intake minus estimated burn uses only the same dates with both values. Unlogged food remains unknown, and this is not a measured energy surplus or deficit.',
       etl: 'ETL percentage is weighted by logged calories across days with a known ETL percentage. Unclassified days are excluded, not counted as zero. Running fuel is tracked separately and does not lower the ETL score.',

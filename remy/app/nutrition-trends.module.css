@@ -8,7 +8,7 @@
 .ranges button[aria-pressed=true] { background: #fff; color: #3b2946; box-shadow: 0 1px 4px #30203b16; }
 .ranges button:hover { color: #3a2646; background: #efebe5; }
 .averageMeta { display: flex; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; margin: 17px 0 14px; color: #7e6d88; font-size: 11px; }
-.averageGrid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin: 0; }
+.averageGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 0; }
 .averageStat { min-width: 0; padding: 17px 16px 14px; border: 1px solid #e8e1eb; border-radius: 11px; background: #fcfbfa; }
 .averageStat.purple { background: #f4eef7; border-color: #e5d9ed; }
 .averageStat.tan { background: #f5f0e6; border-color: #e7dcc8; }
@@ -16,9 +16,6 @@
 .averageStat dd { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 5px; margin: 9px 0 7px; color: #3d2949; font-size: clamp(24px,2.5vw,32px); font-weight: 600; line-height: 1.15; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
 .averageStat dd small { color: #7f6a8c; font-size: 10px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
 .root .averageStat p { margin: 0; color: #887693; font-size: 10px; line-height: 1.5; }
-.nutrientAverages { margin-top: 12px; }
-.nutrientAverages .averageStat { padding-top: 13px; padding-bottom: 12px; background: #fff; border-color: #eee8f0; }
-.nutrientAverages .averageStat dd { font-size: 25px; margin-top: 6px; }
 .averageDetails { border-top: 0!important; padding-top: 0!important; margin-top: 13px!important; }
 .methodNotes { display: grid; gap: 7px; margin-top: 10px; padding: 13px 15px; background: #f9f7f4; border-radius: 9px; }
 .root .methodNotes p { margin: 0; color: #7c6c85; font-size: 11px; line-height: 1.65; }
@@ -72,7 +69,7 @@
 .values tbody th button { border: 0; padding: 0; background: transparent; font: inherit; font-weight: 600; color: #553a66; text-decoration: underline; text-underline-offset: 3px; }
 .values td:last-child { color: #80718a; font-size: 10px; }
 @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
-@media (max-width: 900px) { .averageGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 700px) { .averageGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 600px) {
   .root { padding: 17px 12px; }
   .header { gap: 14px; }

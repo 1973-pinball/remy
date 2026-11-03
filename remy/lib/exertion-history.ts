@@ -1,5 +1,6 @@
 import { addDays, dayBounds, ofKind, profileOf, round, type Entry, type Recovery, type Workout } from './domain';
 import { recoveryContext, recoveryForDate } from './recovery-context';
+import { milesFromMeters } from './run-distance';
 
 /** Saved runs and separately attributed WHOOP cycles. Missing metrics stay unknown. */
 export function exertionHistory(records: Entry[], through: string, range: number, now = new Date().toISOString()) {
@@ -11,7 +12,7 @@ export function exertionHistory(records: Entry[], through: string, range: number
     const durations = today.map(workout => workout.data.durationSec).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
     const cycle = recoveryForDate(records, date, zone, now).selected;
     return {
-      date, km: distances.length ? Math.round(distances.reduce((a,b) => a+b, 0) / 10) / 100 : null,
+      date, miles: distances.length ? Math.round(milesFromMeters(distances.reduce((a,b) => a+b, 0)) * 100) / 100 : null,
       minutes: durations.length ? round(durations.reduce((a,b) => a+b, 0) / 60) : null,
       runCount: today.length, distanceKnown: distances.length, durationKnown: durations.length,
       recovery: cycle?.recovery ?? null, strain: cycle?.strain ?? null, burn: cycle?.expenditureKcal ?? null,

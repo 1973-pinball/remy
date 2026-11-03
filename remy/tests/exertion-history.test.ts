@@ -9,8 +9,8 @@ test('exertion range keeps partial run coverage and unknown dates without counti
  const records=[run('known','2026-11-02',6450,2394),run('partial','2026-11-02',null,600),run('future','2026-11-03',10000,3600),run('cycle','2026-11-02',50000,3000,'ride'),{...run('deleted','2026-11-01',99999,5000),deleted:true}];
  const before=structuredClone(records),days=exertionHistory(records,'2026-11-02',7,'2026-11-03T15:00:00Z');
  assert.equal(days.length,7);assert.equal(days[0].date,'2026-10-27');assert.equal(days.at(-1)?.date,'2026-11-02');
- assert.equal(days[0].km,null);assert.equal(days[0].minutes,null);assert.equal(days[0].burn,null);
- assert.equal(days.at(-1)?.km,6.45);assert.equal(days.at(-1)?.minutes,49.9);
+ assert.equal(days[0].miles,null);assert.equal(days[0].minutes,null);assert.equal(days[0].burn,null);
+ assert.equal(days.at(-1)?.miles,4.01);assert.equal(days.at(-1)?.minutes,49.9);
  assert.equal(days.at(-1)?.distanceKnown,1);assert.equal(days.at(-1)?.durationKnown,2);assert.equal(days.at(-1)?.runCount,2);
  assert.deepEqual(records,before);
 });
