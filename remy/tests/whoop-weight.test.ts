@@ -13,14 +13,19 @@ const compiled=(path:string)=>ts.transpileModule(readFileSync(new URL(path,impor
 const connectionCode=compiled('../lib/connections.ts'),routeCode=compiled('../app/api/whoop/route.ts');
 
 type Token={access_token:string;refresh_token:string;expiresAt:number;scope?:string};
-function harness(options:{scope?:string;bodyStatus?:number;tokenExpired?:boolean;refreshScope?:string;callbackScope?:string}={}){
- const guard={generation:1,provider:'whoop',version:1,disabled:false}, requests:string[]=[], saved:Record<string,unknown>[]=[], secretWrites:Record<string,unknown>[]=[], batches:unknown[][]=[];
+function harness(options:{scope?:string;bodyStatus?:number;cycleStatus?:number;tokenExpired?:boolean;refreshScope?:string;callbackScope?:string;connectionAtSyncLock?:Record<string,unknown>;journalReadError?:string}={}){
+ const guard={generation:1,provider:'whoop',version:1,disabled:false}, requests:string[]=[], saved:Record<string,unknown>[]=[], secretWrites:Record<string,unknown>[]=[], batches:unknown[][]=[],lockEvents:string[]=[];
  let token:Token={access_token:'synthetic-access-only',refresh_token:'synthetic-refresh-only',expiresAt:options.tokenExpired?1:Date.now()+3600000,...options.scope!==undefined?{scope:options.scope}:{}};
  let entries=[entry('connection:whoop','connection',{provider:'whoop',lastSuccess:'2026-10-01T15:00:00Z',weightSnapshots:[old]})];
  const secrets=new Map<string,unknown>([['whoop',token]]);
  const store={
-  operationGuard:async()=>guard,enableSource:async()=>{},listEntries:async()=>structuredClone(entries),getEntry:async(_owner:string,id:string)=>structuredClone(entries.find(row=>row.id===id)??null),
-  acquireRefreshLock:async()=> 'test-lock',releaseRefreshLock:async()=>{},
+  operationGuard:async()=>guard,enableSource:async()=>{},listEntries:async()=>{lockEvents.push('read');if(options.journalReadError)throw new Error(options.journalReadError);return structuredClone(entries);},getEntry:async(_owner:string,id:string)=>structuredClone(entries.find(row=>row.id===id)??null),
+  acquireRefreshLock:async(_owner:string,key:string)=>{
+   lockEvents.push(`acquire:${key}`);
+   // A previous sync commits immediately before this request obtains its lock.
+   if(key==='whoop:sync'&&options.connectionAtSyncLock)entries=entries.map(row=>row.id==='connection:whoop'?{...row,revision:row.revision+1,data:{...row.data,...options.connectionAtSyncLock}}:row);
+   return 'test-lock';
+  },releaseRefreshLock:async(_owner:string,key:string)=>{lockEvents.push(`release:${key}`);},
   readSecret:async(_owner:string,key:string)=>secrets.get(key)??null,
   writeSecret:async(_owner:string,key:string,value:unknown)=>{secrets.set(key,value);secretWrites.push({key,value});if(key==='whoop')token=value as Token;},
   deleteSecret:async(_owner:string,key:string)=>{secrets.delete(key);},
@@ -45,6 +50,7 @@ function harness(options:{scope?:string;bodyStatus?:number;tokenExpired?:boolean
    return options.bodyStatus?Response.json({error:'synthetic denied'},{status:options.bodyStatus}):Response.json({weight_kilogram:75,height_meter:1.8,max_heart_rate:200,measurement_date:'1999-01-01'});
   }
   assert.ok(['/developer/v2/cycle','/developer/v2/recovery','/developer/v2/activity/sleep'].includes(url.pathname));
+  if(url.pathname==='/developer/v2/cycle'&&options.cycleStatus)return Response.json({error:'synthetic cycle failure'},{status:options.cycleStatus});
   return Response.json({records:[],next_token:null});
  };
  const modules:Record<string,unknown>={'server-only':{},'./store':store,'./domain':domain,'./imports':{},'./weight-history':weights};
@@ -57,7 +63,7 @@ function harness(options:{scope?:string;bodyStatus?:number;tokenExpired?:boolean
  };
  const route={exports:{}} as {exports:typeof import('../app/api/whoop/route')};
  new Function('require','module','exports','fetch',routeCode)((name:string)=>{assert.ok(name in routeModules,name);return routeModules[name];},route,route.exports,fetch);
- return{connections:module.exports,route:route.exports,requests,saved,secretWrites,secrets,batches,getToken:()=>token};
+ return{connections:module.exports,route:route.exports,requests,saved,secretWrites,secrets,batches,lockEvents,getToken:()=>token};
 }
 
 test('WHOOP current weight snapshots use observation date, retain history, and never invent a weigh-in timestamp',()=>{
@@ -100,6 +106,30 @@ test('granted body sync stores one current observation per date and optional fai
  const denied=harness({scope:weightScope,bodyStatus:403});await denied.connections.syncSource('test-owner','whoop');
  const status=denied.saved[0].data as Record<string,unknown>;assert.equal(status.complete,true);assert.equal(status.error,null);
  assert.match(String(status.weightError),/Access denied/);assert.deepEqual(status.weightSnapshots,[old]);assert.equal(denied.batches.length,1);
+});
+
+test('a preceding sync’s weight observations survive both optional and primary source failures',async()=>{
+ const latest=weights.observeWhoopWeight({weight_kilogram:74.5},'2026-11-02T15:00:00Z','America/New_York')!;
+ for(const failure of ['body','cycle'] as const){
+  const h=harness({scope:weightScope,connectionAtSyncLock:{weightSnapshots:[old,latest],weightLastObservedAt:latest.observedAt},
+   ...(failure==='body'?{bodyStatus:403}:{cycleStatus:404})});
+  if(failure==='cycle')await assert.rejects(h.connections.syncSource('test-owner','whoop'),/Source request failed/);
+  else await h.connections.syncSource('test-owner','whoop');
+  const data=h.saved.at(-1)!.data as Record<string,unknown>;
+  assert.deepEqual(data.weightSnapshots,[old,latest],'Status writes must preserve observations committed before lock acquisition');
+  assert.equal(data.weightLastObservedAt,latest.observedAt);
+  assert.equal(data.complete,failure==='body');
+  assert.deepEqual(h.lockEvents,['acquire:whoop:sync','read','release:whoop:sync']);
+ }
+});
+
+test('journal-read errors and newly disconnected state release the sync lock without overwriting status',async()=>{
+ for(const options of [{journalReadError:'Synthetic journal read failure'},{connectionAtSyncLock:{disconnected:true}}]){
+  const h=harness(options);
+  await assert.rejects(h.connections.syncSource('test-owner','whoop'),/Synthetic journal read failure|disconnected/);
+  assert.deepEqual(h.lockEvents,['acquire:whoop:sync','read','release:whoop:sync']);
+  assert.equal(h.saved.length,0);assert.equal(h.requests.length,0);assert.equal(h.batches.length,0);
+ }
 });
 
 test('documented offline refresh retains omitted scope while respecting explicit narrower scope',async()=>{
