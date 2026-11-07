@@ -133,6 +133,15 @@ a:focus-visible {
 }
 
 .page-content.privacy-page { max-width: 900px; padding-top: 48px; padding-bottom: 40px; }
+.oauth-page > .brand { margin-bottom: 24px; }
+.oauth-page .card { padding: clamp(22px, 4vw, 32px); }
+.oauth-page h1 { font-size: clamp(26px, 4vw, 32px); font-weight: 650; letter-spacing: -1px; line-height: 1.2; margin: 10px 0 20px; }
+.oauth-page .card p { line-height: 1.65; margin: 14px 0; overflow-wrap: anywhere; }
+.oauth-page .card a { color: #674b81; text-decoration: underline; text-underline-offset: 3px; }
+.oauth-page form { flex-wrap: wrap; }
+.oauth-page button { cursor: pointer; }
+.oauth-page button:focus-visible { outline: 3px solid #a48abb; outline-offset: 3px; }
+.oauth-page [role="status"] { background: #f1eaf6; color: #513966; border-radius: 8px; padding: 12px 14px; }
 .card.privacy-policy { padding: clamp(22px, 4vw, 42px); line-height: 1.75; }
 .card.privacy-policy h1 { font-size: clamp(30px, 5vw, 40px); font-weight: 650; letter-spacing: -1px; line-height: 1.2; margin: 10px 0; }
 .card.privacy-policy h2 { font-size: 21px; font-weight: 650; line-height: 1.35; margin: 32px 0 12px; }

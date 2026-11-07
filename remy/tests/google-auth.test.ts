@@ -36,6 +36,7 @@ function app(options: { availability?: string; user?: User | null; authUrl?: str
     async exchangeCodeForSession(code: string) { calls.exchanges.push(code); if (options.exchangeThrows) throw new Error('synthetic-private-provider-error'); return { error: options.exchangeError ? new Error('synthetic-private-provider-error') : null }; },
     async verifyOtp(input: unknown) { calls.verifications.push(input); return { error: options.exchangeError ? new Error('synthetic-private-provider-error') : null }; },
     async getUser() { calls.users++; return { data: { user: options.user === undefined ? { id: 'owner-id', email: 'owner@example.com', email_confirmed_at: '2026-01-01' } : options.user }, error: options.userError ? new Error('synthetic-private-provider-error') : null }; },
+    async getClaims() { return { data: { claims: { sub: options.user?.id ?? 'owner-id' } }, error: null }; },
     async signOut(input: unknown) { calls.signouts.push(input); return { error: null }; },
   };
   const dependencies = {

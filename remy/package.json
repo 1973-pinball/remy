@@ -17,6 +17,7 @@
     "@base-ui/react": "^1.7.0",
     "@garmin/fitsdk": "^21.217.0",
     "@hookform/resolvers": "^5.7.1",
+    "@modelcontextprotocol/server": "2.4.0",
     "@shadcn/react": "^0.3.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.0",

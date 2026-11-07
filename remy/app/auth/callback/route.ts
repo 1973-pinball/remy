@@ -39,7 +39,12 @@ export async function GET(request: Request) {
     if (verified) {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (!error && user?.email_confirmed_at && isAllowedEmail(user.email)) {
-        return redirect(origin, '/');
+        // Resume only the fixed consent page, never an arbitrary next URL.
+        const pending = /(?:^|;\s*)remy-oauth-authorization=([0-9a-f-]{36})(?:;|$)/i.exec(request.headers.get('cookie') ?? '')?.[1];
+        const valid = pending && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pending);
+        const response = redirect(origin, valid ? `/oauth/consent?authorization_id=${pending}` : '/');
+        response.cookies.delete('remy-oauth-authorization');
+        return response;
       }
       if (oauth && !error && user?.email && user.email_confirmed_at && user.identities?.some(identity => identity.provider === 'google')) {
         try {

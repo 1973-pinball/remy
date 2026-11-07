@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <header>
         <p className="eyebrow">YOUR DATA, IN CONTEXT</p>
         <h1>Privacy policy</h1>
-        <p className="muted">Effective and last updated: November 3, 2026</p>
+        <p className="muted">Effective and last updated: November 7, 2026</p>
         <p>Remy Mux is a personal nutrition and running journal operated by the maintainer of the <a href="https://github.com/1973-pinball/remy">Remy Mux project</a>. Journal access at <a href="https://remy-mux.vercel.app">remy-mux.vercel.app</a> is currently restricted to its configured owner. Other Google users may request access when Google sign-in is enabled; submitting a request does not grant access to the journal. This policy describes that application, including optional WHOOP, Strava, Runna and Tredict connections. A connection only supplies data after it is configured and authorized.</p>
       </header>
 
@@ -58,6 +58,12 @@ export default function PrivacyPage() {
         <p>When access-request email delivery is enabled, <a href="https://resend.com/legal/privacy-policy">Resend</a> processes the requester&apos;s name and email, request time and a reference to the request to notify the operator at info.studio.pinball@gmail.com. Access requests are used to review interest in the app, not for marketing. Request records remain pending until reviewed; an email notification does not itself approve access.</p>
         <p>The hosted Supabase database is in the United States. Service providers may process operational information in other locations. HTTPS protects data in transit. Access to the journal is restricted by server-side owner checks and database access policies. Saved provider credentials and private feed addresses are encrypted by the application before storage. Ordinary journal records are not end-to-end encrypted: the application&apos;s server and its authorized infrastructure administrators can access them to operate the service.</p>
         <p>The source-code repository is public. Your journal, private imports and credentials are not published to it by the app. Remy Mux has no public journal-sharing feature. Information may also need to be disclosed when required by applicable law or to respond to a security incident.</p>
+      </section>
+
+      <section>
+        <h2>Optional ChatGPT plugin</h2>
+        <p>When you connect the private Remy plugin, ChatGPT can request your saved meals, nutrition totals, goals, and bounded summaries of your running, recovery, sleep, and weight. It can save food estimates and corrections you authorize. Tool responses go to ChatGPT under your ChatGPT account&apos;s data controls. This connection does not grant Remy access to your ChatGPT history or copy entries from other chats automatically.</p>
+        <p>The plugin retains food descriptions, estimates, stated assumptions, drafts, saved changes and their revision history in your journal. A photo in ChatGPT can inform an estimate, but this integration does not copy the image into Remy. Provider credentials, private photo files, raw provider exports and route-location data are not exposed by these tools. You can revoke the connection in <Link href="/oauth/connections">Connected apps</Link>. Deleting all journal data also stops the connection from writing until you explicitly reconnect.</p>
       </section>
 
       <section>

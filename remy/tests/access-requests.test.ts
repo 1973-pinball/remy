@@ -222,7 +222,7 @@ test('browser roles cannot read, write or invoke access-request RPCs even for th
 test('owner API verifies session and same origin before list/retry or reading the request body', async () => {
   const f = fixture({ configured: false }); await f.helper.queueAccessRequest(user());
   function routes(identity: ReturnType<typeof user> | null) {
-    const http = load('../lib/http.ts', { '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: identity }, error: null }) } }) }, '@/lib/supabase/config': f.config });
+    const http = load('../lib/http.ts', { '@/lib/supabase/server': { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: identity }, error: null }), getClaims: async () => ({ data: { claims: { sub: identity?.id } }, error: null }) } }) }, '@/lib/supabase/config': f.config });
     return load('../app/api/access-requests/route.ts', { '@/lib/http': http, '@/lib/access-requests': f.helper });
   }
   const request = new Request('https://remy.example.com/api/access-requests');

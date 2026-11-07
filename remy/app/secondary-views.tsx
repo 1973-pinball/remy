@@ -136,6 +136,7 @@ export function ConnectionsView({ demo, onImport, onRefresh }: { demo: boolean; 
     {error && <div role="alert" className="error" style={{ marginBottom: 18 }}>{error} {!demo && <button className="text-button" onClick={() => void load()}>Retry</button>}</div>}
     {notice && <p role="status" className="notice">{notice}</p>}
     <section className="card" style={{ marginBottom: 20 }}><div className="section-heading"><h2>REMY nutrition history</h2><span className="pill">Reviewed import</span></div><p className="muted">Import an exported ChatGPT conversation, a pasted REMY transcript, or structured meals. Review portions, dates and ETL contributions before they enter your journal.</p><button className="text-button" onClick={onImport}>Review a nutrition import <ArrowUpRight size={16} /></button></section>
+    {!demo && <section className="card" style={{ marginBottom: 20 }}><div className="section-heading"><h2>ChatGPT food logging</h2></div><p className="muted">After connecting Remy in ChatGPT, ask it to log a meal and check its save receipt. Your food saves here even when this computer is off. Entries logged without the plugin still need a reviewed import.</p><a className="text-button" href="/oauth/connections">Manage ChatGPT access <ArrowUpRight size={16} /></a></section>}
     {loading && <p className="notice" role="status"><LoaderCircle size={17} className="animate-spin" />Checking source status…</p>}
     <div style={{ display: 'grid', gap: 18 }}>
       {sources.map(source => {
@@ -170,7 +171,7 @@ export function ConnectionsView({ demo, onImport, onRefresh }: { demo: boolean; 
         </section>;
       })}
     </div>
-    <p className="notice">Automatic refresh runs once daily after cloud setup. Keep original exports for older history and use source apps for detailed charts.</p>
+    <p className="notice">Training and recovery sources refresh once daily after cloud setup. ChatGPT food logging uses the separate save workflow above. Keep original exports for older history and use source apps for detailed charts.</p>
   </>;
 }
 
